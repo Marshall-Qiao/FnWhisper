@@ -1,0 +1,8 @@
+.build/
+.swiftpm/
+*.xcodeproj/
+.DS_Store
+FnWhisper.app/
+*.wav
+*.caf
+*.bin
