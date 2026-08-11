@@ -99,13 +99,27 @@ private func testWhisperOutputParsing() {
         "应清理片段空白并用自然间隔合并中英文"
     )
     expect(
-        WhisperOutputParser.parse("今天\n天气很好") == "今天天气很好",
-        "中文分段不应引入多余空格"
+        WhisperOutputParser.parse("今天\n天气很好") == "今天，天气很好。",
+        "中文分段应恢复为自然停顿"
     )
     expect(
         WhisperOutputParser.parse("[BLANK_AUDIO]\n [Silence] \n实际文字")
-            == "实际文字",
+            == "实际文字。",
         "应丢弃已知的静音标记"
+    )
+    expect(
+        WhisperOutputParser.parse("你好,这是断句测试,请继续")
+            == "你好，这是断句测试，请继续。",
+        "中文上下文中的英文标点应规范化并补全句末标点"
+    )
+    expect(
+        WhisperOutputParser.parse("First sentence\nSecond sentence")
+            == "First sentence Second sentence",
+        "英文分段应保留单词间隔但不能擅自修改命令或代码"
+    )
+    expect(
+        WhisperOutputParser.parse("git status") == "git status",
+        "纯英文终端命令不能被自动添加句号"
     )
     expect(
         WhisperOutputParser.parse(" \n\n ").isEmpty,

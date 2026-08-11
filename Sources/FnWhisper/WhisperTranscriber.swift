@@ -70,28 +70,85 @@ enum WhisperOutputParser {
             .filter { !$0.isEmpty }
             .filter { !ignoredMarkers.contains($0.lowercased()) }
 
-        return segments.reduce(into: "") { result, segment in
-            if needsSeparator(between: result, and: segment) {
-                result.append(" ")
-            }
+        let merged = segments.reduce(into: "") { result, segment in
+            result.append(separator(between: result, and: segment))
             result.append(segment)
         }
             .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return finishSentence(normalizeCJKPunctuation(in: merged))
     }
 
-    private static func needsSeparator(
+    private static func separator(
         between existingText: String,
         and nextSegment: String
-    ) -> Bool {
+    ) -> String {
         guard let previous = existingText.last,
               let next = nextSegment.first
         else {
-            return false
+            return ""
         }
         if next.isPunctuation || previous.isWhitespace || next.isWhitespace {
-            return false
+            return ""
         }
-        return !(previous.isCJK && next.isCJK)
+        if previous.isPunctuation {
+            let previousContent = existingText.dropLast().last
+            return previousContent?.isCJK == true && next.isCJK ? "" : " "
+        }
+        if previous.isCJK && next.isCJK {
+            return "，"
+        }
+        return " "
+    }
+
+    private static func normalizeCJKPunctuation(in text: String) -> String {
+        let characters = Array(text)
+        return characters.indices.reduce(into: "") { result, index in
+            let character = characters[index]
+            let previous = index > characters.startIndex
+                ? characters[characters.index(before: index)]
+                : nil
+            let nextIndex = characters.index(after: index)
+            let next = nextIndex < characters.endIndex
+                ? characters[nextIndex]
+                : nil
+
+            switch character {
+            case "," where previous?.isCJK == true || next?.isCJK == true:
+                result.append("，")
+            case "." where previous?.isCJK == true:
+                result.append("。")
+            case "?" where previous?.isCJK == true:
+                result.append("？")
+            case "!" where previous?.isCJK == true:
+                result.append("！")
+            default:
+                result.append(character)
+            }
+        }
+    }
+
+    private static func finishSentence(_ text: String) -> String {
+        guard let last = text.last else {
+            return text
+        }
+        if last.isSentenceTerminator {
+            return text
+        }
+        if last.isClauseTerminator {
+            let contentBeforeTerminator = text.dropLast().last
+            guard contentBeforeTerminator?.isCJK == true else {
+                return text
+            }
+            var result = text
+            result.removeLast()
+            result.append("。")
+            return result
+        }
+        if last.isPunctuation {
+            return text
+        }
+        return last.isCJK ? text + "。" : text
     }
 }
 
@@ -108,6 +165,14 @@ private extension Character {
                 return false
             }
         }
+    }
+
+    var isSentenceTerminator: Bool {
+        ".!?。！？…".contains(self)
+    }
+
+    var isClauseTerminator: Bool {
+        ",;，；、".contains(self)
     }
 }
 
