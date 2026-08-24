@@ -63,25 +63,75 @@ enum WhisperOutputParser {
         "[music]",
     ]
 
-    static func parse(_ rawOutput: String) -> String {
-        let segments = rawOutput
+    enum Style: Equatable {
+        case proseBasic
+        case commandOrCode
+    }
+
+    static func parse(
+        _ rawOutput: String,
+        style: Style = .proseBasic
+    ) -> String {
+        let merged = merge(
+            segments(in: rawOutput),
+            inferCJKPause: style == .proseBasic
+        )
+
+        switch style {
+        case .proseBasic:
+            return finishSentence(normalizePunctuationStyle(in: merged))
+        case .commandOrCode:
+            return merged
+        }
+    }
+
+    static func punctuationInput(_ rawOutput: String) -> String {
+        let merged = merge(
+            segments(in: rawOutput),
+            inferCJKPause: false
+        )
+        return stripRestorablePunctuation(from: merged)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func finalizePunctuated(_ punctuatedText: String) -> String {
+        let merged = merge(
+            segments(in: punctuatedText),
+            inferCJKPause: false
+        )
+        let normalized = normalizePunctuationStyle(in: merged)
+        return finishSentence(normalizeMixedScriptSpacing(in: normalized))
+    }
+
+    private static func segments(in rawOutput: String) -> [String] {
+        rawOutput
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .filter { !ignoredMarkers.contains($0.lowercased()) }
+    }
 
-        let merged = segments.reduce(into: "") { result, segment in
-            result.append(separator(between: result, and: segment))
+    private static func merge(
+        _ segments: [String],
+        inferCJKPause: Bool
+    ) -> String {
+        segments.reduce(into: "") { result, segment in
+            result.append(
+                separator(
+                    between: result,
+                    and: segment,
+                    inferCJKPause: inferCJKPause
+                )
+            )
             result.append(segment)
         }
             .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        return finishSentence(normalizeCJKPunctuation(in: merged))
     }
 
     private static func separator(
         between existingText: String,
-        and nextSegment: String
+        and nextSegment: String,
+        inferCJKPause: Bool
     ) -> String {
         guard let previous = existingText.last,
               let next = nextSegment.first
@@ -96,12 +146,37 @@ enum WhisperOutputParser {
             return previousContent?.isCJK == true && next.isCJK ? "" : " "
         }
         if previous.isCJK && next.isCJK {
-            return "，"
+            return inferCJKPause ? "，" : ""
         }
         return " "
     }
 
-    private static func normalizeCJKPunctuation(in text: String) -> String {
+    private static func stripRestorablePunctuation(from text: String) -> String {
+        let characters = Array(text)
+        return characters.indices.reduce(into: "") { result, index in
+            let character = characters[index]
+            if ",;!?，；！？、。…".contains(character) {
+                return
+            }
+            if character == "." {
+                let previous = index > characters.startIndex
+                    ? characters[characters.index(before: index)]
+                    : nil
+                let nextIndex = characters.index(after: index)
+                let next = nextIndex < characters.endIndex
+                    ? characters[nextIndex]
+                    : nil
+                if previous?.isBasicLatinLetterOrDigit == true,
+                   next?.isBasicLatinLetterOrDigit == true {
+                    result.append(character)
+                }
+                return
+            }
+            result.append(character)
+        }
+    }
+
+    private static func normalizePunctuationStyle(in text: String) -> String {
         let characters = Array(text)
         return characters.indices.reduce(into: "") { result, index in
             let character = characters[index]
@@ -116,16 +191,85 @@ enum WhisperOutputParser {
             switch character {
             case "," where previous?.isCJK == true || next?.isCJK == true:
                 result.append("，")
+            case ";" where previous?.isCJK == true || next?.isCJK == true:
+                result.append("；")
             case "." where previous?.isCJK == true:
                 result.append("。")
             case "?" where previous?.isCJK == true:
                 result.append("？")
             case "!" where previous?.isCJK == true:
                 result.append("！")
+            case "，" where previous?.isCJK != true && next?.isCJK != true:
+                result.append(",")
+            case "；" where previous?.isCJK != true && next?.isCJK != true:
+                result.append(";")
+            case "。" where previous?.isCJK != true:
+                result.append(".")
+            case "？" where previous?.isCJK != true:
+                result.append("?")
+            case "！" where previous?.isCJK != true:
+                result.append("!")
             default:
                 result.append(character)
             }
         }
+    }
+
+    private static func normalizeMixedScriptSpacing(in text: String) -> String {
+        let characters = Array(text)
+        return characters.indices.reduce(into: "") { result, index in
+            let character = characters[index]
+            if let previous = result.last,
+               !previous.isWhitespace,
+               ((previous.isCJK && character.isBasicLatinLetter)
+                   || (previous.isBasicLatinLetter && character.isCJK)) {
+                result.append(" ")
+            }
+            result.append(character)
+
+            let nextIndex = characters.index(after: index)
+            guard nextIndex < characters.endIndex,
+                  !characters[nextIndex].isWhitespace,
+                  ".,;:!?".contains(character),
+                  let previous = index > characters.startIndex
+                    ? characters[characters.index(before: index)]
+                    : nil,
+                  previous.isBasicLatinLetterOrDigit,
+                  (characters[nextIndex].isBasicLatinLetterOrDigit
+                    || characters[nextIndex].isCJK),
+                  !(previous.isASCIIDigit && characters[nextIndex].isASCIIDigit),
+                  !isProtectedInlinePeriod(
+                    character,
+                    in: characters,
+                    at: index
+                  )
+            else {
+                return
+            }
+            result.append(" ")
+        }
+    }
+
+    private static func isProtectedInlinePeriod(
+        _ punctuation: Character,
+        in characters: [Character],
+        at index: Int
+    ) -> Bool {
+        guard punctuation == "." else {
+            return false
+        }
+        var suffix = ""
+        var cursor = characters.index(after: index)
+        while cursor < characters.endIndex,
+              characters[cursor].isBasicLatinLetter {
+            suffix.append(characters[cursor])
+            cursor = characters.index(after: cursor)
+        }
+        return [
+            "ai", "app", "ca", "cn", "co", "com", "dev", "edu", "gov",
+            "io", "js", "json", "md", "me", "net", "org", "pdf", "png",
+            "swift", "ts", "txt", "xyz",
+        ].contains(suffix.lowercased())
     }
 
     private static func finishSentence(_ text: String) -> String {
@@ -174,6 +318,33 @@ private extension Character {
     var isClauseTerminator: Bool {
         ",;，；、".contains(self)
     }
+
+    var isBasicLatinLetterOrDigit: Bool {
+        unicodeScalars.count == 1 && unicodeScalars.allSatisfy { scalar in
+            (0x30...0x39).contains(scalar.value)
+                || (0x41...0x5A).contains(scalar.value)
+                || (0x61...0x7A).contains(scalar.value)
+        }
+    }
+
+    var isBasicLatinLetter: Bool {
+        unicodeScalars.count == 1 && unicodeScalars.allSatisfy { scalar in
+            (0x41...0x5A).contains(scalar.value)
+                || (0x61...0x7A).contains(scalar.value)
+        }
+    }
+
+    var isASCIIDigit: Bool {
+        unicodeScalars.count == 1 && unicodeScalars.allSatisfy { scalar in
+            (0x30...0x39).contains(scalar.value)
+        }
+    }
+}
+
+struct WhisperCLIRawResult {
+    let rawText: String
+    let usedGPU: Bool
+    let warning: String?
 }
 
 struct WhisperTranscriber {
@@ -198,6 +369,18 @@ struct WhisperTranscriber {
     }
 
     func transcribe(audioURL: URL) throws -> String {
+        let rawResult = try transcribeRaw(audioURL: audioURL)
+        let result = WhisperOutputParser.parse(rawResult.rawText)
+        guard !result.isEmpty else {
+            throw WhisperTranscriberError.emptyResult
+        }
+        guard BilingualOutputPolicy.containsOnlyChineseAndEnglish(result) else {
+            throw WhisperTranscriberError.unsupportedLanguage
+        }
+        return result
+    }
+
+    func transcribeRaw(audioURL: URL) throws -> WhisperCLIRawResult {
         guard FileManager.default.isExecutableFile(atPath: executableURL.path) else {
             throw WhisperTranscriberError.executableMissing
         }
@@ -212,6 +395,8 @@ struct WhisperTranscriber {
             try? FileManager.default.removeItem(at: outputTextURL)
         }
 
+        let usedGPU: Bool
+        var warning: String?
         if useGPU {
             do {
                 try runWhisper(
@@ -219,6 +404,7 @@ struct WhisperTranscriber {
                     outputBase: outputBase,
                     useGPU: true
                 )
+                usedGPU = true
             } catch let gpuError as WhisperTranscriberError {
                 guard case .processFailed = gpuError else {
                     throw gpuError
@@ -235,6 +421,8 @@ struct WhisperTranscriber {
                         outputBase: outputBase,
                         useGPU: false
                     )
+                    usedGPU = false
+                    warning = "Metal 识别失败，已使用 CPU 兼容模式。"
                 } catch let cpuError as WhisperTranscriberError {
                     guard case let .processFailed(code, message) = cpuError else {
                         throw cpuError
@@ -251,17 +439,15 @@ struct WhisperTranscriber {
                 outputBase: outputBase,
                 useGPU: false
             )
+            usedGPU = false
         }
 
         let rawOutput = try String(contentsOf: outputTextURL, encoding: .utf8)
-        let result = WhisperOutputParser.parse(rawOutput)
-        guard !result.isEmpty else {
-            throw WhisperTranscriberError.emptyResult
-        }
-        guard BilingualOutputPolicy.containsOnlyChineseAndEnglish(result) else {
-            throw WhisperTranscriberError.unsupportedLanguage
-        }
-        return result
+        return WhisperCLIRawResult(
+            rawText: rawOutput,
+            usedGPU: usedGPU,
+            warning: warning
+        )
     }
 
     static func commandArguments(

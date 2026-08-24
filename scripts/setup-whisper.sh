@@ -37,9 +37,24 @@ if ! command -v brew >/dev/null 2>&1; then
     exit 1
 fi
 
+if ! command -v whisper-cli >/dev/null 2>&1 \
+    || ! command -v whisper-server >/dev/null 2>&1; then
+    if brew list --versions whisper-cpp >/dev/null 2>&1; then
+        print "正在通过 Homebrew 升级 whisper.cpp，以提供 whisper-server…"
+        brew upgrade whisper-cpp
+    else
+        print "正在通过 Homebrew 安装开源 whisper.cpp…"
+        brew install whisper-cpp
+    fi
+fi
+
 if ! command -v whisper-cli >/dev/null 2>&1; then
-    print "正在通过 Homebrew 安装开源 whisper.cpp…"
-    brew install whisper-cpp
+    print -u2 "whisper.cpp 安装后仍未找到 whisper-cli。"
+    exit 1
+fi
+if ! command -v whisper-server >/dev/null 2>&1; then
+    print -u2 "whisper.cpp 安装后仍未找到 whisper-server；无法启用常驻模型加速。"
+    exit 1
 fi
 
 mkdir -p "$MODEL_DIR"

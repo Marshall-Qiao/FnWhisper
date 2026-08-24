@@ -26,6 +26,8 @@ enum TextInsertionMethod: String {
 
 struct TextInsertionTarget {
     fileprivate let element: AXUIElement
+    let bundleIdentifier: String?
+    let inputContext: TextInputContext
 }
 
 @MainActor
@@ -47,7 +49,23 @@ final class TextInjector {
         guard isTextInput(element) else {
             return nil
         }
-        return TextInsertionTarget(element: element)
+
+        var processIdentifier: pid_t = 0
+        let bundleIdentifier: String?
+        if AXUIElementGetPid(element, &processIdentifier) == .success {
+            bundleIdentifier = NSRunningApplication(
+                processIdentifier: processIdentifier
+            )?.bundleIdentifier
+        } else {
+            bundleIdentifier = nil
+        }
+        return TextInsertionTarget(
+            element: element,
+            bundleIdentifier: bundleIdentifier,
+            inputContext: TextTargetClassifier.classify(
+                bundleIdentifier: bundleIdentifier
+            )
+        )
     }
 
     func insert(

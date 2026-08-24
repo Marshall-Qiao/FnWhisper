@@ -6,3 +6,6 @@ FnWhisper.app/
 *.wav
 *.caf
 *.bin
+*.gguf
+*.onnx
+*.download

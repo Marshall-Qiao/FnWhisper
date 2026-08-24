@@ -10,6 +10,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionTimer: Timer?
     private var fnMonitor: FnKeyMonitor?
     private var coordinator: DictationCoordinator?
+    private var whisperRuntime: WhisperRuntime?
+    private var punctuationRestorer: SherpaPunctuationRestorer?
+    private var qwenTextRefiner: QwenTextRefiner?
     private let overlayController = DictationOverlayController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -31,6 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         permissionTimer?.invalidate()
         fnMonitor?.stop()
+        whisperRuntime?.shutdown()
+        qwenTextRefiner?.shutdown()
     }
 
     private func configureRuntime() {
@@ -51,22 +56,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let transcriber = WhisperTranscriber(
+        let cliTranscriber = WhisperTranscriber(
             executableURL: executableURL,
             modelURL: configuration.modelURL,
             language: configuration.language,
             threadCount: configuration.threadCount,
             useGPU: configuration.useGPU
         )
+        let whisperRuntime = WhisperRuntime(
+            cliTranscriber: cliTranscriber,
+            serverExecutableURL: configuration.resolveWhisperServer(),
+            modelURL: configuration.modelURL,
+            language: configuration.language,
+            threadCount: configuration.threadCount,
+            useGPU: configuration.useGPU
+        )
+        let punctuationRestorer = SherpaPunctuationRestorer(
+            modelURL: configuration.punctuationModelURL
+        )
+        let qwenTextRefiner: QwenTextRefiner?
+        if let llamaServerURL = configuration.resolveLlamaServer(),
+           FileManager.default.fileExists(
+            atPath: configuration.textModelURL.path
+           ) {
+            qwenTextRefiner = QwenTextRefiner(
+                executableURL: llamaServerURL,
+                modelURL: configuration.textModelURL
+            )
+        } else {
+            qwenTextRefiner = nil
+        }
+        let appleTextRefiner = AppleFoundationTextRefinerFactory
+            .makeIfAvailable()
+        let textRefiner: TextRefining?
+        if qwenTextRefiner != nil || appleTextRefiner != nil {
+            textRefiner = ParallelTextRefiner(
+                qwen: qwenTextRefiner,
+                apple: appleTextRefiner
+            )
+        } else {
+            textRefiner = nil
+        }
         let coordinator = DictationCoordinator(
             recorder: AudioRecorder(),
-            transcriber: transcriber,
+            whisperRuntime: whisperRuntime,
+            punctuationRestorer: punctuationRestorer,
+            textRefiner: textRefiner,
             textInjector: TextInjector()
         )
         coordinator.onPhaseChange = { [weak self] phase in
             self?.updateStatus(phase)
         }
+        self.whisperRuntime = whisperRuntime
+        self.punctuationRestorer = punctuationRestorer
+        self.qwenTextRefiner = qwenTextRefiner
         self.coordinator = coordinator
+        whisperRuntime.warmUp()
+        punctuationRestorer.warmUp()
+        qwenTextRefiner?.warmUp()
         updateStatus(.idle)
     }
 
@@ -180,17 +227,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc
     private func checkEnvironment() {
         PermissionManager.requestInputPermissions()
-        configureRuntime()
+        if coordinator == nil {
+            configureRuntime()
+        }
         attemptToStartFnMonitor()
 
         let cliDescription = configuration.resolveWhisperCLI()?.path ?? "未找到"
+        let serverDescription = configuration.resolveWhisperServer()?.path
+            ?? "未找到（将使用较慢的 CLI 兼容模式）"
         let modelExists = FileManager.default.fileExists(
             atPath: configuration.modelURL.path
         )
+        let punctuationModelExists = FileManager.default.fileExists(
+            atPath: configuration.punctuationModelURL.path
+        )
+        let textModelExists = FileManager.default.fileExists(
+            atPath: configuration.textModelURL.path
+        )
         let report = """
         Whisper CLI：\(cliDescription)
+        Whisper 常驻服务：\(serverDescription)
         模型：\(modelExists ? "已找到" : "未找到")
         模型路径：\(configuration.modelURL.path)
+        智能标点：\(punctuationRestorer?.diagnosticDescription ?? "未初始化")
+        标点模型路径：\(configuration.punctuationModelURL.path)
+        Qwen 服务：\(qwenTextRefiner?.diagnosticDescription ?? "未配置")
+        llama-server：\(configuration.resolveLlamaServer()?.path ?? "未找到")
+        Qwen 模型路径：\(configuration.textModelURL.path)
+        Apple Foundation Models：\(AppleFoundationTextRefinerFactory.diagnosticDescription)
+        选择规则：Qwen fast 模式优先，按文本长度等待 3–5 秒，未成功则使用并行的 Apple 结果
         计算后端：\(configuration.useGPU ? "Metal GPU（失败时自动回退 CPU）" : "CPU")
         CPU 线程：\(configuration.threadCount)
         \(PermissionManager.diagnosticReport)
@@ -199,7 +264,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.messageText = "FnWhisper 运行环境"
         alert.informativeText = report
-        alert.alertStyle = modelExists && configuration.resolveWhisperCLI() != nil
+        alert.alertStyle = modelExists
+            && punctuationModelExists
+            && textModelExists
+            && configuration.resolveWhisperCLI() != nil
+            && configuration.resolveWhisperServer() != nil
+            && configuration.resolveLlamaServer() != nil
             ? .informational
             : .warning
         alert.addButton(withTitle: "确定")

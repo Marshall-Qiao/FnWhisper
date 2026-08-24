@@ -8,6 +8,8 @@ build:
 
 setup:
 	./scripts/setup-whisper.sh large-v3-q5_0
+	./scripts/setup-punctuation.sh
+	./scripts/setup-qwen.sh
 
 install:
 	./scripts/install.sh

@@ -21,7 +21,7 @@ enum DictationPhase: Equatable {
         case .recording:
             return "正在录音：松开 Fn 完成"
         case .transcribing:
-            return "正在本地识别并输入…"
+            return "正在本地识别、整理并输入…"
         case let .completed(preview):
             return "已输入：\(preview)"
         case let .failed(message):
@@ -35,7 +35,9 @@ final class DictationCoordinator {
     var onPhaseChange: ((DictationPhase) -> Void)?
 
     private let recorder: AudioRecorder
-    private let transcriber: WhisperTranscriber
+    private let whisperRuntime: WhisperRuntime
+    private let punctuationRestorer: SherpaPunctuationRestorer
+    private let textRefiner: TextRefining?
     private let textInjector: TextInjector
     private let logger = Logger(
         subsystem: "com.marshall.fnwhisper",
@@ -51,11 +53,15 @@ final class DictationCoordinator {
 
     init(
         recorder: AudioRecorder,
-        transcriber: WhisperTranscriber,
+        whisperRuntime: WhisperRuntime,
+        punctuationRestorer: SherpaPunctuationRestorer,
+        textRefiner: TextRefining?,
         textInjector: TextInjector
     ) {
         self.recorder = recorder
-        self.transcriber = transcriber
+        self.whisperRuntime = whisperRuntime
+        self.punctuationRestorer = punctuationRestorer
+        self.textRefiner = textRefiner
         self.textInjector = textInjector
     }
 
@@ -139,12 +145,63 @@ final class DictationCoordinator {
             try? FileManager.default.removeItem(at: audioURL)
         }
 
-        let transcriber = self.transcriber
-        let transcription = try await Task.detached(priority: .userInitiated) {
-            try transcriber.transcribe(audioURL: audioURL)
-        }.value
+        let inputContext = insertionTarget?.inputContext ?? .prose
+        let whisperResult = try await whisperRuntime.transcribe(audioURL: audioURL)
+        var warnings = [whisperResult.warning].compactMap { $0 }
+        var transcription: String
+        switch inputContext {
+        case .commandOrCode:
+            transcription = WhisperOutputParser.parse(
+                whisperResult.rawText,
+                style: .commandOrCode
+            )
+        case .prose:
+            let punctuationInput = WhisperOutputParser.punctuationInput(
+                whisperResult.rawText
+            )
+            guard !punctuationInput.isEmpty else {
+                throw WhisperTranscriberError.emptyResult
+            }
+            do {
+                let punctuated = try await punctuationRestorer.restore(
+                    punctuationInput
+                )
+                transcription = WhisperOutputParser.finalizePunctuated(
+                    punctuated
+                )
+            } catch {
+                logger.error(
+                    "CT-Punc failed; using basic punctuation: \(error.localizedDescription, privacy: .public)"
+                )
+                transcription = WhisperOutputParser.parse(whisperResult.rawText)
+                warnings.append("智能标点不可用，已使用基础断句。")
+            }
+
+            transcription = TextTranscriptionNormalizer.normalize(transcription)
+            if let textRefiner {
+                do {
+                    let result = try await textRefiner.refine(transcription)
+                    transcription = result.text
+                    logger.notice(
+                        "Text refinement completed; provider=\(result.provider.rawValue, privacy: .public); characters=\(transcription.count, privacy: .public)"
+                    )
+                } catch {
+                    logger.error(
+                        "Text refinement failed; preserving punctuation result: \(error.localizedDescription, privacy: .public)"
+                    )
+                    warnings.append("文字整理不可用，已保留规范化转写。")
+                }
+            }
+        }
+
+        guard !transcription.isEmpty else {
+            throw WhisperTranscriberError.emptyResult
+        }
+        guard BilingualOutputPolicy.containsOnlyChineseAndEnglish(transcription) else {
+            throw WhisperTranscriberError.unsupportedLanguage
+        }
         logger.notice(
-            "Whisper transcription completed; characters=\(transcription.count, privacy: .public)"
+            "Whisper transcription completed; backend=\(whisperResult.backend.rawValue, privacy: .public); characters=\(transcription.count, privacy: .public)"
         )
         let method = try await textInjector.insert(
             transcription,
@@ -155,7 +212,10 @@ final class DictationCoordinator {
             "Text insertion completed; method=\(method.rawValue, privacy: .public)"
         )
 
-        let preview = String(transcription.prefix(60))
+        var preview = String(transcription.prefix(60))
+        if !warnings.isEmpty {
+            preview += " · " + warnings.joined(separator: " ")
+        }
         phase = .completed(preview)
         try? await Task.sleep(nanoseconds: 1_500_000_000)
         guard case .completed = phase else {

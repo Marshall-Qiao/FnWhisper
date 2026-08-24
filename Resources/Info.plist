@@ -26,6 +26,11 @@
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
     <key>NSMicrophoneUsageDescription</key>
     <string>FnWhisper 需要录制你按住 Fn 时说出的语音，并在本机使用 Whisper 转换成文字。</string>
 </dict>

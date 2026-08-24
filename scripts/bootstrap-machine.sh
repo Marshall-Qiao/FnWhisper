@@ -17,6 +17,8 @@ fi
 
 brew bundle --file "$PROJECT_DIR/Brewfile"
 "$PROJECT_DIR/scripts/setup-whisper.sh" large-v3-q5_0
+"$PROJECT_DIR/scripts/setup-punctuation.sh"
+"$PROJECT_DIR/scripts/setup-qwen.sh"
 "$PROJECT_DIR/scripts/install.sh"
 
 print "部署完成。请按 README 授予输入监听、辅助功能和麦克风权限。"

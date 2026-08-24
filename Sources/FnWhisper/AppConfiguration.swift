@@ -2,6 +2,28 @@ import Foundation
 
 struct AppConfiguration {
     static let defaultModelFilename = "ggml-large-v3-q5_0.bin"
+    static let defaultTextModelFilename =
+        "Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+    static let defaultPunctuationModelDirectory =
+        "sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8"
+    static let minimumTextRefinementTimeout: TimeInterval = 3
+    static let maximumTextRefinementTimeout: TimeInterval = 5
+
+    static func textRefinementTimeout(for text: String) -> TimeInterval {
+        let characterCount = text.reduce(into: 0) { count, character in
+            if !character.isWhitespace {
+                count += 1
+            }
+        }
+        switch characterCount {
+        case ...12:
+            return minimumTextRefinementTimeout
+        case ...80:
+            return 4
+        default:
+            return maximumTextRefinementTimeout
+        }
+    }
 
     static let applicationSupportDirectory: URL = {
         let base = FileManager.default.urls(
@@ -14,6 +36,8 @@ struct AppConfiguration {
     let holdDuration: TimeInterval
     let language: String
     let modelURL: URL
+    let textModelURL: URL
+    let punctuationModelURL: URL
     let threadCount: Int
     let useGPU: Bool
     private let environment: [String: String]
@@ -58,6 +82,27 @@ struct AppConfiguration {
             ?? Self.applicationSupportDirectory
                 .appendingPathComponent("Models", isDirectory: true)
                 .appendingPathComponent(Self.defaultModelFilename)
+
+        let configuredTextModelPath = environment["FNWHISPER_TEXT_MODEL"]
+            ?? defaults.string(forKey: "textModelPath")
+        textModelURL = configuredTextModelPath.map {
+            URL(fileURLWithPath: $0)
+        } ?? Self.applicationSupportDirectory
+            .appendingPathComponent("Models", isDirectory: true)
+            .appendingPathComponent(Self.defaultTextModelFilename)
+
+        let configuredPunctuationModelPath = environment[
+            "FNWHISPER_PUNCTUATION_MODEL"
+        ] ?? defaults.string(forKey: "punctuationModelPath")
+        punctuationModelURL = configuredPunctuationModelPath.map {
+            URL(fileURLWithPath: $0)
+        } ?? Self.applicationSupportDirectory
+            .appendingPathComponent("Models", isDirectory: true)
+            .appendingPathComponent(
+                Self.defaultPunctuationModelDirectory,
+                isDirectory: true
+            )
+            .appendingPathComponent("model.int8.onnx")
     }
 
     static func normalizedLanguage(_ requestedLanguage: String?) -> String {
@@ -115,6 +160,63 @@ struct AppConfiguration {
         candidates.append(contentsOf: [
             URL(fileURLWithPath: "/opt/homebrew/bin/whisper-cli"),
             URL(fileURLWithPath: "/usr/local/bin/whisper-cli"),
+        ])
+
+        return candidates.first {
+            FileManager.default.isExecutableFile(atPath: $0.path)
+        }
+    }
+
+    func resolveWhisperServer() -> URL? {
+        var candidates: [URL] = []
+
+        if let configuredPath = environment["FNWHISPER_WHISPER_SERVER"] {
+            candidates.append(URL(fileURLWithPath: configuredPath))
+        }
+
+        if let resourceURL = Bundle.main.resourceURL {
+            candidates.append(
+                resourceURL
+                    .appendingPathComponent("bin", isDirectory: true)
+                    .appendingPathComponent("whisper-server")
+            )
+        }
+
+        if let cliURL = resolveWhisperCLI() {
+            candidates.append(
+                cliURL.deletingLastPathComponent()
+                    .appendingPathComponent("whisper-server")
+            )
+        }
+
+        candidates.append(contentsOf: [
+            URL(fileURLWithPath: "/opt/homebrew/bin/whisper-server"),
+            URL(fileURLWithPath: "/usr/local/bin/whisper-server"),
+        ])
+
+        return candidates.first {
+            FileManager.default.isExecutableFile(atPath: $0.path)
+        }
+    }
+
+    func resolveLlamaServer() -> URL? {
+        var candidates: [URL] = []
+
+        if let configuredPath = environment["FNWHISPER_LLAMA_SERVER"] {
+            candidates.append(URL(fileURLWithPath: configuredPath))
+        }
+
+        if let resourceURL = Bundle.main.resourceURL {
+            candidates.append(
+                resourceURL
+                    .appendingPathComponent("bin", isDirectory: true)
+                    .appendingPathComponent("llama-server")
+            )
+        }
+
+        candidates.append(contentsOf: [
+            URL(fileURLWithPath: "/opt/homebrew/bin/llama-server"),
+            URL(fileURLWithPath: "/usr/local/bin/llama-server"),
         ])
 
         return candidates.first {
