@@ -101,12 +101,13 @@ final class DictationOverlayController {
                 tint: .systemBlue,
                 showsProgress: true
             )
-        case let .completed(preview):
+        case let .completed(preview, route):
             show(
-                symbol: "checkmark.circle.fill",
-                text: "已输入：\(preview)",
+                symbol: nil,
+                text: route.indicatorText,
                 tint: .systemGreen,
-                showsProgress: false
+                showsProgress: false,
+                accessibilityDescription: "处理完成。\(route.displayText)。\(preview)"
             )
         case let .failed(message):
             show(
@@ -119,17 +120,25 @@ final class DictationOverlayController {
     }
 
     private func show(
-        symbol: String,
+        symbol: String?,
         text: String,
         tint: NSColor,
-        showsProgress: Bool
+        showsProgress: Bool,
+        accessibilityDescription: String? = nil
     ) {
-        iconView.image = NSImage(
-            systemSymbolName: symbol,
-            accessibilityDescription: text
-        )
+        if let symbol {
+            iconView.image = NSImage(
+                systemSymbolName: symbol,
+                accessibilityDescription: accessibilityDescription ?? text
+            )
+            iconView.isHidden = false
+        } else {
+            iconView.image = nil
+            iconView.isHidden = true
+        }
         iconView.contentTintColor = tint
         statusLabel.stringValue = text
+        statusLabel.setAccessibilityLabel(accessibilityDescription ?? text)
 
         if showsProgress {
             progressIndicator.startAnimation(nil)

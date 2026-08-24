@@ -230,6 +230,59 @@ private func testBilingualOutputPolicy() {
     )
 }
 
+private func testDictationProcessingRoute() {
+    let qwenRoute = DictationProcessingRoute(
+        whisperBackend: .serverMetal,
+        textProcessing: .refined(.ctPunc, .qwen)
+    )
+    expect(
+        qwenRoute.displayText
+            == "Whisper 常驻 Metal → CT-Punc（本地） → Qwen（本地模型）",
+        "应显示完整的 Whisper、标点与 Qwen 处理路径"
+    )
+    expect(
+        qwenRoute.finalProcessorText == "Qwen（本地模型）",
+        "完成提示应突出最终采用的 Qwen 模型"
+    )
+    expect(qwenRoute.indicatorText == "Ⓠ", "Qwen 应显示简短的 Q 标记")
+
+    let appleRoute = DictationProcessingRoute(
+        whisperBackend: .serverCPU,
+        textProcessing: .refined(.basic, .apple)
+    )
+    expect(
+        appleRoute.displayText
+            == "Whisper 常驻 CPU → 基础断句 → Apple Foundation Models",
+        "Qwen 未采用时应明确显示 Apple Foundation Models"
+    )
+    expect(appleRoute.indicatorText == "Ⓐ", "Apple 应显示简短的 A 标记")
+
+    let fallbackRoute = DictationProcessingRoute(
+        whisperBackend: .cliCPU,
+        textProcessing: .refinementFailed(.ctPunc)
+    )
+    expect(
+        fallbackRoute.displayText
+            == "Whisper whisper-cli CPU → CT-Punc（本地） → 整理失败，保留规范化转写",
+        "文字整理失败时不能误报 Qwen 或 Apple 已生成最终结果"
+    )
+    expect(
+        fallbackRoute.indicatorText == "Ⓦ",
+        "未采用文字整理模型时应显示 Whisper 标记"
+    )
+
+    let commandRoute = DictationProcessingRoute(
+        whisperBackend: .cliMetal,
+        textProcessing: .commandOrCode
+    )
+    expect(
+        commandRoute.displayText
+            == "Whisper whisper-cli Metal → 命令/代码直出",
+        "命令和代码场景应明确显示跳过文字整理模型"
+    )
+    expect(commandRoute.indicatorText == "⌘", "命令和代码应显示命令标记")
+}
+
 private enum StubTextRefinerError: LocalizedError {
     case expectedFailure
 
@@ -1651,6 +1704,7 @@ testFnEventConsumptionPolicy()
 testWhisperOutputParsing()
 testTextTargetClassification()
 testBilingualOutputPolicy()
+testDictationProcessingRoute()
 runAsyncCoreTests()
 testTextRefinementValidation()
 testLanguageNormalization()

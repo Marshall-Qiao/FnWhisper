@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-enum WhisperBackend: String {
+enum WhisperBackend: String, Equatable {
     case serverMetal = "常驻 Metal"
     case serverCPU = "常驻 CPU"
     case cliMetal = "whisper-cli Metal"

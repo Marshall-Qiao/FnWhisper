@@ -206,7 +206,7 @@ enum TextFormatDirectiveParser {
     }
 }
 
-enum TextRefinementProvider: String {
+enum TextRefinementProvider: String, Equatable {
     case qwen = "Qwen（本地模型）"
     case apple = "Apple Foundation Models"
 }

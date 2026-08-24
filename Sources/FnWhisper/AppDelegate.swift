@@ -202,8 +202,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateStatus(_ phase: DictationPhase) {
         overlayController.update(for: phase)
-        statusMenuItem?.title = phase.statusText
-        statusItem?.button?.toolTip = phase.statusText
+        if case let .completed(_, route) = phase {
+            statusMenuItem?.title = route.indicatorText
+            statusMenuItem?.toolTip = route.displayText
+            statusItem?.button?.toolTip = route.displayText
+        } else {
+            statusMenuItem?.title = phase.statusText
+            statusMenuItem?.toolTip = nil
+            statusItem?.button?.toolTip = phase.statusText
+        }
 
         let symbolName: String
         switch phase {

@@ -6,12 +6,25 @@ FnWhisper is a voice-only macOS menu bar app. Hold `Fn` while speaking, release 
 
 Audio and transcripts never leave the Mac. Internet access is needed only to install `whisper.cpp` / `llama.cpp`, download the Whisper, CT-Punc, and Qwen models, and fetch pinned static inference libraries during the first build; normal use works offline afterward.
 
+## README index
+
+- [Quick installation](#quick-installation): go from a new Mac to a runnable app, including source, dependencies, and models.
+- [What gets installed](#what-gets-installed): Homebrew packages, three local models, system-model behavior, and file locations.
+- [Step-by-step installation](#step-by-step-installation): run every setup stage and core tests before installation.
+- [First-launch permissions](#first-launch-permissions): Input Monitoring, Accessibility, and Microphone access.
+- [Verify the installation](#verify-the-installation): check permissions, models, signing, and the running process.
+- [Upgrade](#upgrade): safely rebuild and replace the local app after pulling new code.
+- [Usage](#usage): hold Fn to dictate into the current field.
+- [Development and verification](#development-and-verification): developer checks and real-model diagnostics.
+
+If you only want to install the app, start with [Quick installation](#quick-installation).
+
 ## Current behavior
 
 - Hold Fn for 350 ms to start recording; a short press does nothing.
 - While the app is running, it consumes Fn press and release events so macOS Globe, emoji, input-source, or dictation actions cannot take over. Other modifier keys continue to work.
 - Releasing Fn stops recording and starts local transcription.
-- A non-activating floating HUD shows listening, local transcription, result preview, and error states without stealing focus.
+- A non-activating floating HUD shows listening and local transcription without stealing focus. On completion it shows only one marker that is never inserted into the text: `Ⓠ` for Qwen, `Ⓐ` for Apple, `Ⓦ` when the Whisper/normalized result is kept, or `⌘` for command/code passthrough.
 - The active text control is captured when recording starts, so the result returns to the same field even if focus changes later. Recording is rejected immediately when the current focus is not editable.
 - macOS Terminal is supported: its `AXTextArea` is treated as editable even when Accessibility cannot set its value directly, and Cmd+V writes into the command line.
 - Whisper automatically detects Chinese or English and preserves mixed Chinese-English speech. The output policy accepts only Chinese, English, mixed text, and punctuation.
@@ -20,7 +33,7 @@ Audio and transcripts never leave the Mac. Internet access is needed only to ins
 - Local `Qwen3-4B-Instruct-2507 Q4_K_M` runs through `llama-server` in fast/non-thinking mode in parallel with Apple Foundation Models. A valid Qwen result wins within an adaptive 3–5 second request window based on transcript length; otherwise the already-running Apple result is used. If both fail validation, the deterministically normalized, punctuated transcript is preserved.
 - The default model is the full-architecture quantized `large-v3-q5_0`, running on Apple Metal GPU. The app warms a `whisper-server` bound only to `127.0.0.1`, so consecutive utterances do not reload the model. A failed Metal service visibly falls back to CPU, then to the slower one-shot `whisper-cli` if the service is unavailable.
 - Text insertion first refocuses the captured control and sends Cmd+V for web and Electron compatibility, then falls back to the Accessibility API when needed. The original clipboard is restored afterward.
-- The menu bar icon reports ready, recording, transcribing, and error states.
+- The menu bar icon reports ready, recording, transcribing, and error states. The complete processing path remains available in the menu bar tooltip during completion and in local logs.
 - The app does not read typed content, keep recordings, or call a cloud speech API.
 
 ## Requirements
@@ -29,27 +42,113 @@ Audio and transcripts never leave the Mac. Internet access is needed only to ins
 - Apple Command Line Tools (`swift`) and Homebrew.
 - About 1.01 GiB for Whisper, 72 MiB for CT-Punc INT8, and 2.33 GiB for Qwen, plus Homebrew runtime dependencies. Allow about 4.66 GiB of free space while the Qwen download is being verified and installed.
 
-## Installation
+## Quick installation
+
+This is the recommended entry point for a new machine. The installer supports macOS only; Apple Silicon is the currently verified architecture.
+
+### 1. Install the one-time prerequisites
+
+Install Apple Command Line Tools:
+
+```bash
+xcode-select --install
+```
+
+Install Homebrew from [brew.sh](https://brew.sh), then confirm both tools are available:
+
+```bash
+xcode-select -p
+brew --version
+```
+
+### 2. Clone and run the complete installer
 
 ```bash
 git clone https://github.com/Marshall-Qiao/FnWhisper.git
 cd FnWhisper
+./scripts/bootstrap-machine.sh
+```
+
+`bootstrap-machine.sh` performs these steps in order:
+
+1. installs `whisper-cpp` and `llama.cpp` from `Brewfile`;
+2. downloads and verifies the local Whisper, CT-Punc, and Qwen models;
+3. lets Swift Package Manager fetch pinned sherpa-onnx and ONNX Runtime static libraries;
+4. builds, signs, and installs `~/Applications/FnWhisper.app`;
+5. backs up the old app, stops its helper processes, and launches the new app.
+
+The script is safe to rerun. Existing models with valid checksums are not downloaded again.
+
+## What gets installed
+
+### Code and runtime dependencies
+
+| Component | Purpose | Source/install method |
+| --- | --- | --- |
+| Apple Swift, AppKit, AVFoundation | App compilation, microphone recording, and menu bar UI | Apple Command Line Tools / macOS |
+| `whisper-cli`, `whisper-server` | Local speech recognition with CLI fallback | Homebrew `whisper-cpp` |
+| `llama-server` | Runs the local Qwen text-refinement model | Homebrew `llama.cpp` |
+| sherpa-onnx 1.13.5 | Local bilingual CT-Punc punctuation restoration | Pinned SwiftPM static XCFramework |
+| ONNX Runtime 1.27.1 | Executes the CT-Punc ONNX model | Pinned SwiftPM static XCFramework |
+
+### Local models
+
+| Model | Purpose | Size | Default location |
+| --- | --- | ---: | --- |
+| `ggml-large-v3-q5_0.bin` | Whisper Chinese, English, and mixed-speech recognition | About 1.01 GiB | `~/Library/Application Support/FnWhisper/Models/ggml-large-v3-q5_0.bin` |
+| `model.int8.onnx` | sherpa-onnx bilingual CT-Punc punctuation | About 72 MiB | `~/Library/Application Support/FnWhisper/Models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/model.int8.onnx` |
+| `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` | Local fast/non-thinking text refinement | About 2.33 GiB | `~/Library/Application Support/FnWhisper/Models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf` |
+
+Each model setup script verifies a pinned checksum before writing the final file. The Qwen download and installation briefly keep two copies, so allow at least 4.66 GiB of free space for that stage, plus additional space for Whisper, CT-Punc, Homebrew packages, and build caches.
+
+Apple Foundation Models is not downloaded by this project. It is an optional macOS 26 system capability. If it is unavailable, FnWhisper can still use local Qwen or keep the transcript after Whisper, punctuation, and deterministic normalization.
+
+The primary installed files are:
+
+```text
+~/Applications/FnWhisper.app
+~/Library/Application Support/FnWhisper/Models/ggml-large-v3-q5_0.bin
+~/Library/Application Support/FnWhisper/Models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/model.int8.onnx
+~/Library/Application Support/FnWhisper/Models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+```
+
+See the [verified deployment machine configuration](docs/DEPLOYMENT_MACHINE.md) for pinned hashes, verified software versions, and the reference hardware.
+
+## Step-by-step installation
+
+To inspect each dependency, model, and test stage separately, run:
+
+```bash
 brew bundle --file Brewfile
 ./scripts/setup-whisper.sh large-v3-q5_0
 ./scripts/setup-punctuation.sh
 ./scripts/setup-qwen.sh
+./scripts/test.sh
 ./scripts/install.sh
 ```
 
-On a new Mac, `./scripts/bootstrap-machine.sh` installs runtime dependencies from `Brewfile`, downloads and verifies all three models, then builds and installs the app. See the [verified deployment machine configuration](docs/DEPLOYMENT_MACHINE.md) for the current reference environment.
+Script responsibilities:
 
-The app is installed to `~/Applications/FnWhisper.app` and launched. On first launch, allow these permissions under System Settings → Privacy & Security:
+| Script | Responsibility |
+| --- | --- |
+| `scripts/setup-whisper.sh` | Installs/checks `whisper.cpp`, then downloads and verifies the selected Whisper model |
+| `scripts/setup-punctuation.sh` | Downloads, extracts, and verifies the CT-Punc INT8 model |
+| `scripts/setup-qwen.sh` | Checks required `llama-server` flags, then downloads and verifies Qwen GGUF from a pinned revision |
+| `scripts/test.sh` | Runs the standalone Swift core tests without XCTest |
+| `scripts/build-app.sh` | Produces a Release build, assembles the app, bundles licenses, and verifies code signing |
+| `scripts/install.sh` | Builds, backs up and replaces the old app, stops old helpers, and launches the new app |
+
+The default install directory is `~/Applications`. Developers may set `FNWHISPER_INSTALL_DIR` before installation to select another destination; `FNWHISPER_APP_SUPPORT_DIR` changes the model root.
+
+## First-launch permissions
+
+After the first launch, allow these permissions under System Settings → Privacy & Security:
 
 1. Input Monitoring;
 2. Accessibility;
 3. Microphone, requested the first time Fn is held.
 
-After granting access, click the waveform menu bar icon and choose “检查权限与运行环境” (Check permissions and runtime). Quit and reopen the app once if macOS requests it.
+These permissions belong to the current macOS user and cannot be granted by the installer. After granting access, click the waveform menu bar icon and choose “检查权限与运行环境” (Check permissions and runtime). Quit and reopen the app once if macOS requests it.
 
 If permissions repeatedly appear unauthorized after upgrading an older ad-hoc build, run once:
 
@@ -59,6 +158,34 @@ tccutil reset All com.marshall.fnwhisper
 ```
 
 Then grant the permissions again. Local builds use a stable designated requirement so rebuilding does not invalidate TCC authorization when the executable hash changes. For formal distribution, set `FNWHISPER_SIGN_IDENTITY` to an Apple Development or Developer ID Application identity.
+
+## Verify the installation
+
+After granting permissions, run:
+
+```bash
+# Check dependencies, all three models, and current permissions; missing permissions return a nonzero status
+~/Applications/FnWhisper.app/Contents/MacOS/FnWhisper --diagnose
+
+# Verify app signing
+codesign --verify --deep --strict ~/Applications/FnWhisper.app
+
+# Confirm that the app is running
+pgrep -fl '/FnWhisper.app/Contents/MacOS/FnWhisper'
+```
+
+Finish with a real end-to-end check in any prose field: leave the caret visible, hold Fn while speaking Chinese, English, or mixed speech, release it, and confirm the text returns to the same field.
+
+## Upgrade
+
+From a clean worktree, update the source and rerun the complete installer:
+
+```bash
+git pull --ff-only
+./scripts/bootstrap-machine.sh
+```
+
+The installer moves the current app to a timestamped `FnWhisper.app.backup-*` in the same directory before installing and launching the new build. Models with valid checksums are not downloaded again. Upgrading does not commit, push, or delete files from the source worktree.
 
 ## Usage
 

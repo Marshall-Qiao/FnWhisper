@@ -18,6 +18,7 @@ swiftc \
     "$PROJECT_DIR/Sources/FnWhisper/WhisperRuntime.swift" \
     "$PROJECT_DIR/Sources/FnWhisper/TextSpokenNumberNormalizer.swift" \
     "$PROJECT_DIR/Sources/FnWhisper/TextRefinement.swift" \
+    "$PROJECT_DIR/Sources/FnWhisper/DictationProcessingRoute.swift" \
     "$PROJECT_DIR/Sources/FnWhisper/QwenTextRefiner.swift" \
     "$PROJECT_DIR/Tests/CoreTests/main.swift" \
     -framework AVFoundation \

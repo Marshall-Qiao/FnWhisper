@@ -6,12 +6,25 @@ FnWhisper 是一个仅做语音输入的 macOS 菜单栏 App：在任意输入�
 
 语音和识别文本不会上传云端。首次安装时需要联网安装 `whisper.cpp` / `llama.cpp`、下载 Whisper、CT-Punc 与 Qwen 模型，并在构建时获取固定版本的静态推理库；之后可以离线使用。
 
+## README 索引
+
+- [最快安装](#最快安装)：新 Mac 从源码、依赖和模型到可运行 App。
+- [会安装什么](#会安装什么)：Homebrew 依赖、三个本地模型、系统模型和落盘位置。
+- [分步安装](#分步安装)：逐项执行并在安装前运行核心测试。
+- [首次授权](#首次授权)：输入监听、辅助功能和麦克风权限。
+- [验证安装](#验证安装)：检查权限、模型、签名和进程。
+- [升级](#升级)：拉取新代码后安全重建和替换本地 App。
+- [使用](#使用)：长按 Fn 完成语音输入。
+- [开发与验证](#开发与验证)：开发者测试和真实模型诊断命令。
+
+如果只想安装，直接从[最快安装](#最快安装)开始。
+
 ## 当前实现
 
 - 长按 Fn 350 ms 开始录音，短按 Fn 不触发录音。
 - App 运行时独占 Fn 的按下和松开事件，避免 macOS 原有的地球仪、表情、输入源或听写功能抢占；其他修饰键不受影响。
 - 松开 Fn 后停止录音并开始本地转写。
-- 不抢焦点的悬浮状态框会显示“正在听”“正在本地转成文字”和识别结果预览。
+- 不抢焦点的悬浮状态框会显示“正在听”和“正在本地转成文字”；完成时只显示一个不会写入正文的小图标：`Ⓠ` 表示 Qwen、`Ⓐ` 表示 Apple、`Ⓦ` 表示保留 Whisper/规范化结果、`⌘` 表示命令或代码直出。
 - 长按 Fn 时固定捕获当前文本输入控件，转写完成后写回同一个输入框；如果焦点在按钮等非输入控件，会立即提示先点击输入位置。
 - 支持 macOS Terminal：终端的 `AXTextArea` 即使不允许直接修改 Accessibility 值，也会作为有效输入焦点并通过 Cmd+V 写入命令行。
 - 默认让 Whisper 在中文与英文语音之间自动检测，输出层只接受中文、英文和中英混说；检测到其他文字脚本时不会写入。
@@ -20,7 +33,7 @@ FnWhisper 是一个仅做语音输入的 macOS 菜单栏 App：在任意输入�
 - `Qwen3-4B-Instruct-2507 Q4_K_M` 通过本机 `llama-server` 以 fast/non-thinking 模式运行，并与 Apple Foundation Models 并行。Qwen 按转写长度获得 3–5 秒的动态请求窗口，窗口内返回且通过语义保护时优先；否则使用已并行完成的 Apple 结果；两者都失败时保留经过确定性规范化和标点处理的转写。
 - 默认使用完整架构的量化 `large-v3-q5_0` 模型和 Apple Metal GPU 识别；App 启动后会预热仅监听 `127.0.0.1` 的 `whisper-server`，连续输入无需反复加载模型。Metal 常驻服务失败时会明确提示并尝试 CPU，服务整体不可用时再回退到较慢的单次 `whisper-cli`。
 - 优先重新聚焦开始录音时的输入框并发送 Cmd+V，兼容网页和 Electron 编辑器；粘贴失败时回退到 Accessibility API，并恢复原剪贴板。
-- 菜单栏显示就绪、录音、识别和错误状态。
+- 菜单栏显示就绪、录音、识别和错误状态；完整处理路径保留在完成阶段的菜单栏悬停提示和本地日志中。
 - 不读取键入内容，不保存录音，不调用云端语音 API。
 
 ## 系统要求
@@ -29,27 +42,113 @@ FnWhisper 是一个仅做语音输入的 macOS 菜单栏 App：在任意输入�
 - Apple Command Line Tools（`swift`）和 Homebrew。
 - 首次安装约需 1.01 GiB Whisper、72 MiB CT-Punc INT8 和 2.33 GiB Qwen 模型空间；Homebrew 运行依赖另占少量空间。Qwen 下载校验和安装期间需预留约 4.66 GiB 可用空间。
 
-## 安装
+## 最快安装
+
+这是新机器的推荐入口。安装脚本只支持 macOS；当前已在 Apple Silicon 上验证。
+
+### 1. 安装一次性前置工具
+
+安装 Apple Command Line Tools：
+
+```bash
+xcode-select --install
+```
+
+然后从 [brew.sh](https://brew.sh) 安装 Homebrew，并确认两者可用：
+
+```bash
+xcode-select -p
+brew --version
+```
+
+### 2. 克隆并执行完整安装
 
 ```bash
 git clone https://github.com/Marshall-Qiao/FnWhisper.git
 cd FnWhisper
+./scripts/bootstrap-machine.sh
+```
+
+`bootstrap-machine.sh` 会依次执行以下操作：
+
+1. 按 `Brewfile` 安装 `whisper-cpp` 和 `llama.cpp`；
+2. 下载并校验 Whisper、CT-Punc、Qwen 三个本地模型；
+3. 通过 Swift Package Manager 获取固定版本的 sherpa-onnx 与 ONNX Runtime 静态库；
+4. 构建、签名并安装 `~/Applications/FnWhisper.app`；
+5. 备份旧 App、停止它启动的旧 helper，然后启动新 App。
+
+脚本可以重复执行。已经存在且校验正确的模型不会重新下载。
+
+## 会安装什么
+
+### 代码和运行依赖
+
+| 组件 | 用途 | 来源/安装方式 |
+| --- | --- | --- |
+| Apple Swift、AppKit、AVFoundation | 编译 App、录音和菜单栏界面 | Apple Command Line Tools / macOS |
+| `whisper-cli`、`whisper-server` | 本地语音识别；常驻服务失败时支持 CLI 回退 | Homebrew `whisper-cpp` |
+| `llama-server` | 运行本地 Qwen 文字整理模型 | Homebrew `llama.cpp` |
+| sherpa-onnx 1.13.5 | 本地中英文 CT-Punc 标点恢复 | SwiftPM 固定版本静态 XCFramework |
+| ONNX Runtime 1.27.1 | 执行 CT-Punc ONNX 模型 | SwiftPM 固定版本静态 XCFramework |
+
+### 本地模型
+
+| 模型 | 用途 | 大小 | 默认位置 |
+| --- | --- | ---: | --- |
+| `ggml-large-v3-q5_0.bin` | Whisper 中英文及中英混说识别 | 约 1.01 GiB | `~/Library/Application Support/FnWhisper/Models/ggml-large-v3-q5_0.bin` |
+| `model.int8.onnx` | sherpa-onnx CT-Punc 中英文标点 | 约 72 MiB | `~/Library/Application Support/FnWhisper/Models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/model.int8.onnx` |
+| `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` | 本地 fast/non-thinking 文字整理 | 约 2.33 GiB | `~/Library/Application Support/FnWhisper/Models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf` |
+
+三个下载脚本都校验固定哈希后才写入最终路径。Qwen 下载和安装期间会短暂保留两份文件，因此首次安装应至少预留约 4.66 GiB 可用空间；整个安装还需要为 Whisper、CT-Punc、Homebrew 依赖和构建缓存预留额外空间。
+
+Apple Foundation Models 不是本项目下载的模型。它是 macOS 26 提供的可选系统能力；系统模型不可用时，FnWhisper 仍可使用本地 Qwen，或者保留经过 Whisper、标点和确定性规范化处理的文字。
+
+最终主要文件布局如下：
+
+```text
+~/Applications/FnWhisper.app
+~/Library/Application Support/FnWhisper/Models/ggml-large-v3-q5_0.bin
+~/Library/Application Support/FnWhisper/Models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/model.int8.onnx
+~/Library/Application Support/FnWhisper/Models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+```
+
+已验证的公开软件版本、哈希和硬件基线见[部署机器配置](docs/DEPLOYMENT_MACHINE.md)。
+
+## 分步安装
+
+如果希望逐项观察依赖、模型和测试结果，执行：
+
+```bash
 brew bundle --file Brewfile
 ./scripts/setup-whisper.sh large-v3-q5_0
 ./scripts/setup-punctuation.sh
 ./scripts/setup-qwen.sh
+./scripts/test.sh
 ./scripts/install.sh
 ```
 
-新机器也可以执行 `./scripts/bootstrap-machine.sh`，按 `Brewfile` 安装运行依赖，下载并校验三个模型，然后构建和安装 App。已验证的公开部署基线见 [部署机器配置](docs/DEPLOYMENT_MACHINE.md)。
+各脚本职责：
 
-App 默认安装到 `~/Applications/FnWhisper.app` 并启动。第一次启动时，请在“系统设置 → 隐私与安全性”中允许：
+| 脚本 | 作用 |
+| --- | --- |
+| `scripts/setup-whisper.sh` | 安装/检查 `whisper.cpp`，下载并校验指定 Whisper 模型 |
+| `scripts/setup-punctuation.sh` | 下载、解压并校验 CT-Punc INT8 模型 |
+| `scripts/setup-qwen.sh` | 检查 `llama-server` 必需参数，下载并校验固定 revision 的 Qwen GGUF |
+| `scripts/test.sh` | 运行不依赖 XCTest 的核心 Swift 测试 |
+| `scripts/build-app.sh` | Release 构建、组装 `.app`、打包许可证并完成代码签名验证 |
+| `scripts/install.sh` | 构建、备份旧 App、替换安装、结束旧 helper 并启动新 App |
+
+默认安装目录是 `~/Applications`。开发者可以在安装前设置 `FNWHISPER_INSTALL_DIR` 改变目标目录；模型根目录可通过 `FNWHISPER_APP_SUPPORT_DIR` 改变。
+
+## 首次授权
+
+App 首次启动后，在“系统设置 → 隐私与安全性”中允许：
 
 1. 输入监听；
 2. 辅助功能；
 3. 麦克风（第一次长按 Fn 时询问）。
 
-授权后点击菜单栏波形图标，选择“检查权限与运行环境”。如果 macOS 要求，退出并重新打开 App 一次。
+这些权限属于当前 Mac 登录用户，安装脚本不能代替用户授予。授权后点击菜单栏波形图标，选择“检查权限与运行环境”；如果 macOS 要求，退出并重新打开 App 一次。
 
 如果从旧的 ad-hoc 构建升级后权限反复显示未授权，执行一次：
 
@@ -59,6 +158,34 @@ tccutil reset All com.marshall.fnwhisper
 ```
 
 然后重新授予上述权限。当前构建脚本会给无开发者证书的本地构建写入稳定的 designated requirement，后续重复构建不会再因二进制哈希变化丢失授权。正式分发应通过 `FNWHISPER_SIGN_IDENTITY` 指定 Apple Development 或 Developer ID Application 身份。
+
+## 验证安装
+
+授予权限后执行：
+
+```bash
+# 检查依赖、三个模型和当前权限；缺少权限时命令会返回非零状态
+~/Applications/FnWhisper.app/Contents/MacOS/FnWhisper --diagnose
+
+# 检查 App 签名
+codesign --verify --deep --strict ~/Applications/FnWhisper.app
+
+# 确认 App 已运行
+pgrep -fl '/FnWhisper.app/Contents/MacOS/FnWhisper'
+```
+
+最后在任意普通输入框中做一次真实验证：保持光标可见，按住 Fn 说一句中英文或中英混合内容，松开后确认文字回到同一个输入框。
+
+## 升级
+
+在干净工作区中更新代码并重复运行完整安装脚本：
+
+```bash
+git pull --ff-only
+./scripts/bootstrap-machine.sh
+```
+
+安装脚本会把现有 App 移到同目录下带时间戳的 `FnWhisper.app.backup-*`，再安装并启动新构建；模型哈希正确时不会重复下载。升级不会自动提交、推送或删除源码工作区中的文件。
 
 ## 使用
 

@@ -7,7 +7,7 @@ enum DictationPhase: Equatable {
     case preparing
     case recording
     case transcribing
-    case completed(String)
+    case completed(preview: String, route: DictationProcessingRoute)
     case failed(String)
 
     var statusText: String {
@@ -22,8 +22,8 @@ enum DictationPhase: Equatable {
             return "正在录音：松开 Fn 完成"
         case .transcribing:
             return "正在本地识别、整理并输入…"
-        case let .completed(preview):
-            return "已输入：\(preview)"
+        case let .completed(_, route):
+            return route.indicatorText
         case let .failed(message):
             return "错误：\(message)"
         }
@@ -149,12 +149,14 @@ final class DictationCoordinator {
         let whisperResult = try await whisperRuntime.transcribe(audioURL: audioURL)
         var warnings = [whisperResult.warning].compactMap { $0 }
         var transcription: String
+        let textProcessing: DictationTextProcessing
         switch inputContext {
         case .commandOrCode:
             transcription = WhisperOutputParser.parse(
                 whisperResult.rawText,
                 style: .commandOrCode
             )
+            textProcessing = .commandOrCode
         case .prose:
             let punctuationInput = WhisperOutputParser.punctuationInput(
                 whisperResult.rawText
@@ -162,6 +164,7 @@ final class DictationCoordinator {
             guard !punctuationInput.isEmpty else {
                 throw WhisperTranscriberError.emptyResult
             }
+            let punctuationProcessor: DictationPunctuationProcessor
             do {
                 let punctuated = try await punctuationRestorer.restore(
                     punctuationInput
@@ -169,12 +172,14 @@ final class DictationCoordinator {
                 transcription = WhisperOutputParser.finalizePunctuated(
                     punctuated
                 )
+                punctuationProcessor = .ctPunc
             } catch {
                 logger.error(
                     "CT-Punc failed; using basic punctuation: \(error.localizedDescription, privacy: .public)"
                 )
                 transcription = WhisperOutputParser.parse(whisperResult.rawText)
                 warnings.append("智能标点不可用，已使用基础断句。")
+                punctuationProcessor = .basic
             }
 
             transcription = TextTranscriptionNormalizer.normalize(transcription)
@@ -182,6 +187,10 @@ final class DictationCoordinator {
                 do {
                     let result = try await textRefiner.refine(transcription)
                     transcription = result.text
+                    textProcessing = .refined(
+                        punctuationProcessor,
+                        result.provider
+                    )
                     logger.notice(
                         "Text refinement completed; provider=\(result.provider.rawValue, privacy: .public); characters=\(transcription.count, privacy: .public)"
                     )
@@ -190,7 +199,10 @@ final class DictationCoordinator {
                         "Text refinement failed; preserving punctuation result: \(error.localizedDescription, privacy: .public)"
                     )
                     warnings.append("文字整理不可用，已保留规范化转写。")
+                    textProcessing = .refinementFailed(punctuationProcessor)
                 }
+            } else {
+                textProcessing = .noRefiner(punctuationProcessor)
             }
         }
 
@@ -216,7 +228,14 @@ final class DictationCoordinator {
         if !warnings.isEmpty {
             preview += " · " + warnings.joined(separator: " ")
         }
-        phase = .completed(preview)
+        let route = DictationProcessingRoute(
+            whisperBackend: whisperResult.backend,
+            textProcessing: textProcessing
+        )
+        logger.notice(
+            "Dictation processing route=\(route.displayText, privacy: .public)"
+        )
+        phase = .completed(preview: preview, route: route)
         try? await Task.sleep(nanoseconds: 1_500_000_000)
         guard case .completed = phase else {
             return
