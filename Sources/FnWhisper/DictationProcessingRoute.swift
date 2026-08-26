@@ -4,15 +4,12 @@ enum DictationPunctuationProcessor: String, Equatable {
 }
 
 enum DictationTextProcessing: Equatable {
-    case commandOrCode
     case refined(DictationPunctuationProcessor, TextRefinementProvider)
     case noRefiner(DictationPunctuationProcessor)
     case refinementFailed(DictationPunctuationProcessor)
 
     var indicatorText: String {
         switch self {
-        case .commandOrCode:
-            return "⌘"
         case let .refined(_, provider):
             switch provider {
             case .qwen:
@@ -27,8 +24,6 @@ enum DictationTextProcessing: Equatable {
 
     var finalProcessorText: String {
         switch self {
-        case .commandOrCode:
-            return "命令/代码直出"
         case let .refined(_, provider):
             return provider.rawValue
         case .noRefiner:
@@ -38,10 +33,24 @@ enum DictationTextProcessing: Equatable {
         }
     }
 
+    var completionText: String {
+        switch self {
+        case let .refined(_, provider):
+            switch provider {
+            case .qwen:
+                return "最终由 Qwen3-4B 本地模型整理"
+            case .apple:
+                return "最终由 Apple 本地模型整理"
+            }
+        case .noRefiner:
+            return "由 Whisper 本地生成"
+        case .refinementFailed:
+            return "已保留 Whisper 本地结果"
+        }
+    }
+
     var pathComponents: [String] {
         switch self {
-        case .commandOrCode:
-            return ["命令/代码直出"]
         case let .refined(punctuation, provider):
             return [punctuation.rawValue, provider.rawValue]
         case let .noRefiner(punctuation):
@@ -62,6 +71,10 @@ struct DictationProcessingRoute: Equatable {
 
     var indicatorText: String {
         textProcessing.indicatorText
+    }
+
+    var completionText: String {
+        textProcessing.completionText
     }
 
     var displayText: String {

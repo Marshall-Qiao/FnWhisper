@@ -23,7 +23,7 @@ enum DictationPhase: Equatable {
         case .transcribing:
             return "正在本地识别、整理并输入…"
         case let .completed(_, route):
-            return route.indicatorText
+            return "\(route.indicatorText) \(route.completionText)"
         case let .failed(message):
             return "错误：\(message)"
         }
@@ -145,65 +145,55 @@ final class DictationCoordinator {
             try? FileManager.default.removeItem(at: audioURL)
         }
 
-        let inputContext = insertionTarget?.inputContext ?? .prose
         let whisperResult = try await whisperRuntime.transcribe(audioURL: audioURL)
         var warnings = [whisperResult.warning].compactMap { $0 }
         var transcription: String
         let textProcessing: DictationTextProcessing
-        switch inputContext {
-        case .commandOrCode:
-            transcription = WhisperOutputParser.parse(
-                whisperResult.rawText,
-                style: .commandOrCode
+        let punctuationInput = WhisperOutputParser.punctuationInput(
+            whisperResult.rawText
+        )
+        guard !punctuationInput.isEmpty else {
+            throw WhisperTranscriberError.emptyResult
+        }
+        let punctuationProcessor: DictationPunctuationProcessor
+        do {
+            let punctuated = try await punctuationRestorer.restore(
+                punctuationInput
             )
-            textProcessing = .commandOrCode
-        case .prose:
-            let punctuationInput = WhisperOutputParser.punctuationInput(
-                whisperResult.rawText
+            transcription = WhisperOutputParser.finalizePunctuated(
+                punctuated
             )
-            guard !punctuationInput.isEmpty else {
-                throw WhisperTranscriberError.emptyResult
-            }
-            let punctuationProcessor: DictationPunctuationProcessor
+            punctuationProcessor = .ctPunc
+        } catch {
+            logger.error(
+                "CT-Punc failed; using basic punctuation: \(error.localizedDescription, privacy: .public)"
+            )
+            transcription = WhisperOutputParser.parse(whisperResult.rawText)
+            warnings.append("智能标点不可用，已使用基础断句。")
+            punctuationProcessor = .basic
+        }
+
+        transcription = TextTranscriptionNormalizer.normalize(transcription)
+        if let textRefiner {
             do {
-                let punctuated = try await punctuationRestorer.restore(
-                    punctuationInput
+                let result = try await textRefiner.refine(transcription)
+                transcription = result.text
+                textProcessing = .refined(
+                    punctuationProcessor,
+                    result.provider
                 )
-                transcription = WhisperOutputParser.finalizePunctuated(
-                    punctuated
+                logger.notice(
+                    "Text refinement completed; provider=\(result.provider.rawValue, privacy: .public); characters=\(transcription.count, privacy: .public)"
                 )
-                punctuationProcessor = .ctPunc
             } catch {
                 logger.error(
-                    "CT-Punc failed; using basic punctuation: \(error.localizedDescription, privacy: .public)"
+                    "Text refinement failed; preserving punctuation result: \(error.localizedDescription, privacy: .public)"
                 )
-                transcription = WhisperOutputParser.parse(whisperResult.rawText)
-                warnings.append("智能标点不可用，已使用基础断句。")
-                punctuationProcessor = .basic
+                warnings.append("文字整理不可用，已保留规范化转写。")
+                textProcessing = .refinementFailed(punctuationProcessor)
             }
-
-            transcription = TextTranscriptionNormalizer.normalize(transcription)
-            if let textRefiner {
-                do {
-                    let result = try await textRefiner.refine(transcription)
-                    transcription = result.text
-                    textProcessing = .refined(
-                        punctuationProcessor,
-                        result.provider
-                    )
-                    logger.notice(
-                        "Text refinement completed; provider=\(result.provider.rawValue, privacy: .public); characters=\(transcription.count, privacy: .public)"
-                    )
-                } catch {
-                    logger.error(
-                        "Text refinement failed; preserving punctuation result: \(error.localizedDescription, privacy: .public)"
-                    )
-                    warnings.append("文字整理不可用，已保留规范化转写。")
-                    textProcessing = .refinementFailed(punctuationProcessor)
-                }
-            } else {
-                textProcessing = .noRefiner(punctuationProcessor)
-            }
+        } else {
+            textProcessing = .noRefiner(punctuationProcessor)
         }
 
         guard !transcription.isEmpty else {

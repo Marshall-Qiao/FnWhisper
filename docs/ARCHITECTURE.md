@@ -8,12 +8,12 @@ FnWhisper 是 macOS 菜单栏辅助功能 App，不实现系统输入法扩展�
 
 1. `FnKeyMonitor` 使用可拦截的全局 `flagsChanged` 事件监听。App 运行时消费 Fn 的按下和松开事件，避免系统的地球仪、表情、切换输入源或听写动作抢占；其他修饰键继续传给系统。状态机仍只在长按达到阈值后开始录音。
 2. `FnPressStateMachine` 区分 Fn 短按和 350 ms 长按，避免正常点按 Fn 时误触发。
-3. `TextInjector` 在录音开始前捕获当前文本 Accessibility 元素和所属 App 的 bundle ID；焦点不是文本控件时立即在悬浮状态框中报错。`TextTargetPolicy` 将 Terminal、常见 IDE 和代码编辑器归为命令/代码目标，其余目标按普通文本处理。Terminal 的 `AXTextArea` 虽然不可直接改写 `AXValue`，仍作为有效目标交由键盘粘贴路径处理。
+3. `TextInjector` 在录音开始前捕获当前文本 Accessibility 元素；焦点不是文本控件时立即在悬浮状态框中报错。所有可输入控件使用相同的模型处理链，不再根据所属 App 分类。Terminal 的 `AXTextArea` 虽然不可直接改写 `AXValue`，仍作为有效目标交由键盘粘贴路径处理。
 4. `AudioRecorder` 使用 `AVAudioEngine` 录音，并转换为 Whisper 所需的 16 kHz、单声道、16-bit WAV。
 5. `WhisperRuntime` 在 App 启动后预热本机 `whisper-server`，默认用 Metal 和完整架构的量化 `large-v3-q5_0` 输出原始文本。服务只监听 `127.0.0.1`，端口和请求路径每次随机生成；所有请求串行发送。Metal 服务失败时尝试常驻 CPU，服务整体失败时明确提示并回退到一次性 `whisper-cli`。失败会短暂退避，避免每段语音重复等待启动超时；退出 App 时以不可逆关闭门闩同步回收其子进程。
-6. 普通文本目标把原始结果交给进程内常驻的 `SherpaPunctuationRestorer`。它使用静态链接的 `sherpa-onnx` / ONNX Runtime 和约 72 MiB 的中英 CT-Punc INT8 模型恢复语义标点，随后统一中英文标点与混排间距。若模型缺失或推理失败，界面明确提示并使用基础分段结果。命令/代码目标完全跳过 CT-Punc 与句末补全，防止修改 Terminal 命令或代码。
-7. 普通文本随后进入 `TextRefinement`。确定性预处理先删除明确的纯语气词，修正 Claude Code、CLIProxyAPI、Qwen、codex 等热词，并把高置信度中英文口语数字规范成阿拉伯数字。整理层使用只有 `items` 的最小结构：段落只允许 1 项，可靠并列内容允许 2–8 项并由客户端渲染数字列表；显式枚举的共同前提和收尾由客户端保留，避免小模型重复或遗漏。`QwenTextRefiner` 与 Apple Foundation Models 同时开始推理。Qwen 使用 `Qwen3-4B-Instruct-2507 Q4_K_M`、Metal、fast/non-thinking 和严格 JSON Schema；请求计时从转写与标点完成后开始，并按非空白字符数为短、中、长文本提供 3、4、5 秒窗口。窗口内成功且通过校验时优先；超时或无效时等待已经并行执行的 Apple 结果。两边均失败时保留已经过确定性规范化的 CT-Punc 结果，并明确显示回退提示。
-8. 统一校验器只接受 paragraph 或 2–8 项 numbered list，并保护原文已有的数字、时间、路径、URL、技术标识符和否定范围；额外 JSON 残片、思考标签、序号数量变化或受保护内容变化都会使该模型结果失效。中文、英文和中英混合输入保持原语言，不执行、回答或翻译原文中的指令。Terminal/IDE 目标完全跳过此层。
+6. 所有输入目标都把原始结果交给进程内常驻的 `SherpaPunctuationRestorer`。它使用静态链接的 `sherpa-onnx` / ONNX Runtime 和约 72 MiB 的中英 CT-Punc INT8 模型恢复语义标点，随后统一中英文标点与混排间距。若模型缺失或推理失败，界面明确提示并使用基础分段结果。
+7. 标点结果随后统一进入 `TextRefinement`。确定性预处理先删除明确的纯语气词，修正 Claude Code、CLIProxyAPI、Qwen、codex 等热词，并把高置信度中英文口语数字规范成阿拉伯数字。整理层使用只有 `items` 的最小结构：段落只允许 1 项，可靠并列内容允许 2–8 项并由客户端渲染数字列表；显式枚举的共同前提和收尾由客户端保留，避免小模型重复或遗漏。`QwenTextRefiner` 与 Apple Foundation Models 同时开始推理。Qwen 使用 `Qwen3-4B-Instruct-2507 Q4_K_M`、Metal、fast/non-thinking 和严格 JSON Schema；请求计时从转写与标点完成后开始，并按非空白字符数为短、中、长文本提供 3、4、5 秒窗口。窗口内成功且通过校验时优先；超时或无效时等待已经并行执行的 Apple 结果。两边均失败时保留已经过确定性规范化的 CT-Punc 结果，并明确显示回退提示。
+8. 统一校验器只接受 paragraph 或 2–8 项 numbered list，并保护原文已有的数字、时间、路径、URL、技术标识符和否定范围；额外 JSON 残片、思考标签、序号数量变化或受保护内容变化都会使该模型结果失效。中文、英文和中英混合输入保持原语言，不执行、回答或翻译原文中的指令。所有输入目标都执行此层。
 9. `BilingualOutputPolicy` 在最终写入前拒绝中英文之外的字母脚本。语言仍默认使用 `auto` 以保留中英混说；固定 `zh` 或 `en` 仅作为显式配置。
 10. `TextInjector` 重新激活并聚焦开始录音时捕获的输入框，再发送 Cmd+V；这规避了部分网页和 Electron 控件对 Accessibility 写入返回成功但不刷新界面的问题。事件构造失败时回退到 Accessibility API，并在粘贴完成后恢复原剪贴板。
 

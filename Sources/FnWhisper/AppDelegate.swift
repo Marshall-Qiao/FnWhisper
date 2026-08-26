@@ -203,7 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateStatus(_ phase: DictationPhase) {
         overlayController.update(for: phase)
         if case let .completed(_, route) = phase {
-            statusMenuItem?.title = route.indicatorText
+            statusMenuItem?.title = "\(route.indicatorText) \(route.completionText)"
             statusMenuItem?.toolTip = route.displayText
             statusItem?.button?.toolTip = route.displayText
         } else {

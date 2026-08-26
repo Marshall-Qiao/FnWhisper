@@ -63,26 +63,12 @@ enum WhisperOutputParser {
         "[music]",
     ]
 
-    enum Style: Equatable {
-        case proseBasic
-        case commandOrCode
-    }
-
-    static func parse(
-        _ rawOutput: String,
-        style: Style = .proseBasic
-    ) -> String {
+    static func parse(_ rawOutput: String) -> String {
         let merged = merge(
             segments(in: rawOutput),
-            inferCJKPause: style == .proseBasic
+            inferCJKPause: true
         )
-
-        switch style {
-        case .proseBasic:
-            return finishSentence(normalizePunctuationStyle(in: merged))
-        case .commandOrCode:
-            return merged
-        }
+        return finishSentence(normalizePunctuationStyle(in: merged))
     }
 
     static func punctuationInput(_ rawOutput: String) -> String {

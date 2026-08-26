@@ -4,12 +4,13 @@ import AppKit
 final class DictationOverlayController {
     private let panel: NSPanel
     private let iconView: NSImageView
+    private let badgeLabel: NSTextField
     private let statusLabel: NSTextField
     private let progressIndicator: NSProgressIndicator
 
     init() {
         panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 310, height: 92),
+            contentRect: NSRect(x: 0, y: 0, width: 410, height: 92),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -44,6 +45,13 @@ final class DictationOverlayController {
         )
         iconView.contentTintColor = .systemRed
 
+        badgeLabel = NSTextField(labelWithString: "")
+        badgeLabel.translatesAutoresizingMaskIntoConstraints = false
+        badgeLabel.font = .systemFont(ofSize: 24, weight: .semibold)
+        badgeLabel.textColor = .systemGreen
+        badgeLabel.alignment = .center
+        badgeLabel.isHidden = true
+
         statusLabel = NSTextField(labelWithString: "")
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.font = .systemFont(ofSize: 16, weight: .medium)
@@ -57,7 +65,9 @@ final class DictationOverlayController {
         progressIndicator.controlSize = .small
         progressIndicator.isDisplayedWhenStopped = false
 
-        let row = NSStackView(views: [iconView, statusLabel, progressIndicator])
+        let row = NSStackView(
+            views: [iconView, badgeLabel, statusLabel, progressIndicator]
+        )
         row.translatesAutoresizingMaskIntoConstraints = false
         row.orientation = .horizontal
         row.alignment = .centerY
@@ -68,6 +78,7 @@ final class DictationOverlayController {
         NSLayoutConstraint.activate([
             iconView.widthAnchor.constraint(equalToConstant: 30),
             iconView.heightAnchor.constraint(equalToConstant: 30),
+            badgeLabel.widthAnchor.constraint(equalToConstant: 30),
             progressIndicator.widthAnchor.constraint(equalToConstant: 18),
             row.centerXAnchor.constraint(equalTo: background.centerXAnchor),
             row.centerYAnchor.constraint(equalTo: background.centerYAnchor),
@@ -104,10 +115,11 @@ final class DictationOverlayController {
         case let .completed(preview, route):
             show(
                 symbol: nil,
-                text: route.indicatorText,
+                badge: route.indicatorText,
+                text: route.completionText,
                 tint: .systemGreen,
                 showsProgress: false,
-                accessibilityDescription: "处理完成。\(route.displayText)。\(preview)"
+                accessibilityDescription: "处理完成。\(route.completionText)。处理路径：\(route.displayText)。识别预览：\(preview)"
             )
         case let .failed(message):
             show(
@@ -121,6 +133,7 @@ final class DictationOverlayController {
 
     private func show(
         symbol: String?,
+        badge: String? = nil,
         text: String,
         tint: NSColor,
         showsProgress: Bool,
@@ -135,6 +148,17 @@ final class DictationOverlayController {
         } else {
             iconView.image = nil
             iconView.isHidden = true
+        }
+        if let badge {
+            badgeLabel.stringValue = badge
+            badgeLabel.textColor = tint
+            badgeLabel.setAccessibilityLabel(
+                accessibilityDescription ?? "\(badge) \(text)"
+            )
+            badgeLabel.isHidden = false
+        } else {
+            badgeLabel.stringValue = ""
+            badgeLabel.isHidden = true
         }
         iconView.contentTintColor = tint
         statusLabel.stringValue = text

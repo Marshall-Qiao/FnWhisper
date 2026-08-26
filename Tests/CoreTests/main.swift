@@ -126,20 +126,6 @@ private func testWhisperOutputParsing() {
         "空识别结果应保持为空"
     )
     expect(
-        WhisperOutputParser.parse(
-            "今天\n天气很好",
-            style: .commandOrCode
-        ) == "今天天气很好",
-        "命令或代码目标不能给中文分段添加标点"
-    )
-    expect(
-        WhisperOutputParser.parse(
-            "echo 你好",
-            style: .commandOrCode
-        ) == "echo 你好",
-        "命令或代码目标不能添加句末标点"
-    )
-    expect(
         WhisperOutputParser.punctuationInput(
             "你好,这是测试。\nnext sentence!"
         ) == "你好这是测试 next sentence",
@@ -175,35 +161,6 @@ private func testWhisperOutputParsing() {
         WhisperOutputParser.finalizePunctuated("open example.com。")
             == "open example.com.",
         "CT-Punc 标点规范化不应拆开常见域名"
-    )
-}
-
-private func testTextTargetClassification() {
-    expect(
-        TextTargetClassifier.classify(bundleIdentifier: "com.apple.Terminal")
-            == .commandOrCode,
-        "Terminal 应绕过语义标点"
-    )
-    expect(
-        TextTargetClassifier.classify(
-            bundleIdentifier: "com.jetbrains.goland"
-        ) == .commandOrCode,
-        "JetBrains IDE 应绕过语义标点"
-    )
-    expect(
-        TextTargetClassifier.classify(
-            bundleIdentifier: "com.todesktop.230313mzl4w4u92"
-        ) == .commandOrCode,
-        "Cursor 应绕过语义标点"
-    )
-    expect(
-        TextTargetClassifier.classify(bundleIdentifier: "com.openai.chat")
-            == .prose,
-        "普通聊天应用应使用 CT-Punc"
-    )
-    expect(
-        TextTargetClassifier.classify(bundleIdentifier: nil) == .prose,
-        "未知应用应默认按普通文本处理"
     )
 }
 
@@ -245,6 +202,10 @@ private func testDictationProcessingRoute() {
         "完成提示应突出最终采用的 Qwen 模型"
     )
     expect(qwenRoute.indicatorText == "Ⓠ", "Qwen 应显示简短的 Q 标记")
+    expect(
+        qwenRoute.completionText == "最终由 Qwen3-4B 本地模型整理",
+        "Qwen 完成提示应同时说明最终文字来源"
+    )
 
     let appleRoute = DictationProcessingRoute(
         whisperBackend: .serverCPU,
@@ -256,6 +217,10 @@ private func testDictationProcessingRoute() {
         "Qwen 未采用时应明确显示 Apple Foundation Models"
     )
     expect(appleRoute.indicatorText == "Ⓐ", "Apple 应显示简短的 A 标记")
+    expect(
+        appleRoute.completionText == "最终由 Apple 本地模型整理",
+        "Apple 完成提示应同时说明最终文字来源"
+    )
 
     let fallbackRoute = DictationProcessingRoute(
         whisperBackend: .cliCPU,
@@ -270,17 +235,20 @@ private func testDictationProcessingRoute() {
         fallbackRoute.indicatorText == "Ⓦ",
         "未采用文字整理模型时应显示 Whisper 标记"
     )
+    expect(
+        fallbackRoute.completionText == "已保留 Whisper 本地结果",
+        "整理失败时应明确说明保留了 Whisper 结果"
+    )
 
-    let commandRoute = DictationProcessingRoute(
-        whisperBackend: .cliMetal,
-        textProcessing: .commandOrCode
+    let noRefinerRoute = DictationProcessingRoute(
+        whisperBackend: .serverMetal,
+        textProcessing: .noRefiner(.ctPunc)
     )
     expect(
-        commandRoute.displayText
-            == "Whisper whisper-cli Metal → 命令/代码直出",
-        "命令和代码场景应明确显示跳过文字整理模型"
+        noRefinerRoute.completionText == "由 Whisper 本地生成",
+        "没有文字整理模型时应明确说明本地 Whisper 来源"
     )
-    expect(commandRoute.indicatorText == "⌘", "命令和代码应显示命令标记")
+
 }
 
 private enum StubTextRefinerError: LocalizedError {
@@ -1702,7 +1670,6 @@ testLongFnPress()
 testRepeatedModifierEvents()
 testFnEventConsumptionPolicy()
 testWhisperOutputParsing()
-testTextTargetClassification()
 testBilingualOutputPolicy()
 testDictationProcessingRoute()
 runAsyncCoreTests()

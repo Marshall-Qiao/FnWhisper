@@ -24,11 +24,11 @@ If you only want to install the app, start with [Quick installation](#quick-inst
 - Hold Fn for 350 ms to start recording; a short press does nothing.
 - While the app is running, it consumes Fn press and release events so macOS Globe, emoji, input-source, or dictation actions cannot take over. Other modifier keys continue to work.
 - Releasing Fn stops recording and starts local transcription.
-- A non-activating floating HUD shows listening and local transcription without stealing focus. On completion it shows only one marker that is never inserted into the text: `Ⓠ` for Qwen, `Ⓐ` for Apple, `Ⓦ` when the Whisper/normalized result is kept, or `⌘` for command/code passthrough.
+- A non-activating floating HUD shows listening and local transcription without stealing focus. On completion it shows a source marker plus a short explanation that is never inserted into the text, such as `Ⓠ Final text refined by the local Qwen3-4B model`. `Ⓐ` represents Apple and `Ⓦ` a preserved Whisper/normalized result.
 - The active text control is captured when recording starts, so the result returns to the same field even if focus changes later. Recording is rejected immediately when the current focus is not editable.
 - macOS Terminal is supported: its `AXTextArea` is treated as editable even when Accessibility cannot set its value directly, and Cmd+V writes into the command line.
 - Whisper automatically detects Chinese or English and preserves mixed Chinese-English speech. The output policy accepts only Chinese, English, mixed text, and punctuation.
-- Prose fields use the local `sherpa-onnx` bilingual CT-Punc INT8 model for semantic punctuation. Terminal and common IDE/code-editor targets use command mode: CT-Punc and automatic sentence endings are bypassed so commands and code stay intact.
+- Every input field, including Terminal, IDE, and code-editor fields, uses the same local processing chain: CT-Punc restores semantic punctuation, then Qwen/Apple refines the text. No app-specific model bypass remains.
 - Chinese, English, and mixed prose is organized without changing its meaning: filler and stutters are removed, hotwords and spoken numbers are normalized, explicit corrections are applied, and reliably signaled parallel tasks, steps, or requirements become numbered lists—even when they are introduced only by cues such as “then”, “also”, or “finally”. The models must not translate, answer, or invent information.
 - Local `Qwen3-4B-Instruct-2507 Q4_K_M` runs through `llama-server` in fast/non-thinking mode in parallel with Apple Foundation Models. A valid Qwen result wins within an adaptive 3–5 second request window based on transcript length; otherwise the already-running Apple result is used. If both fail validation, the deterministically normalized, punctuated transcript is preserved.
 - The default model is the full-architecture quantized `large-v3-q5_0`, running on Apple Metal GPU. The app warms a `whisper-server` bound only to `127.0.0.1`, so consecutive utterances do not reload the model. A failed Metal service visibly falls back to CPU, then to the slower one-shot `whisper-cli` if the service is unavailable.
@@ -202,7 +202,7 @@ An editable caret must be visible when recording starts. You may switch windows 
 3. `AudioRecorder` records the microphone and converts the result on release to 16 kHz, mono, 16-bit PCM WAV.
 4. `WhisperRuntime` sends the WAV to a resident `whisper-server` on the local loopback interface, using `large-v3-q5_0` and Metal. Failure handling is explicit: resident CPU, then one-shot CLI compatibility mode.
 5. Prose targets restore punctuation with CT-Punc, apply deterministic filler, hotword, and spoken-number normalization, then request local Qwen fast mode and Apple Foundation Models concurrently. The Qwen timer starts only after speech, Whisper transcription, and punctuation are complete: short, medium, and long transcripts receive 3, 4, or 5 seconds respectively. A valid Qwen result wins within that window; otherwise Apple is used. If neither result passes structural and semantic checks, the deterministically normalized, punctuated transcript is kept.
-6. Terminal/IDE targets bypass both punctuation and text refinement so commands and code remain unchanged. Both paths reject scripts other than Chinese and English.
+6. Every target uses the same punctuation and text-refinement flow, followed by the same rejection of scripts other than Chinese and English.
 7. `TextInjector` locates the original field, prefers Cmd+V, falls back to Accessibility when necessary, restores the original clipboard, and deletes the temporary recording.
 
 All audio and model inference remain local. See [Architecture](docs/ARCHITECTURE.md) for module boundaries, permission rationale, and failure handling.
@@ -301,7 +301,7 @@ After downloading another model, point `modelPath` to its file. Larger models ge
 - If a remapping utility handles Fn before the CGEvent layer, disable that mapping for FnWhisper to receive the event.
 - FnWhisper suppresses the native macOS short-press Fn action while running; quitting the app restores it immediately.
 - The current interaction records while held and transcribes the complete utterance after release. It does not stream partial text while speaking.
-- Terminal and common IDE/code-editor targets intentionally bypass CT-Punc. A terminal-like app not yet listed in the target classifier may need its bundle identifier added.
+- Terminal, IDE, and code-editor fields also pass through CT-Punc and Qwen/Apple, so dictated commands or code may receive punctuation or structural formatting.
 - Apple Foundation Models requires macOS 26 and an available system model. Qwen continues to work by itself when Apple is unavailable. A timed-out or semantically invalid Qwen result is never inserted; FnWhisper uses Apple or preserves the deterministically normalized, punctuated transcript.
 - Temporary audio is deleted after transcription. A force-terminated process may leave an incomplete file in the system temporary directory for a short time.
 

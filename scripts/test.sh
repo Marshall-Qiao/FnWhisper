@@ -12,7 +12,6 @@ swiftc \
     -module-cache-path "$TEST_BUILD_DIR/module-cache" \
     "$PROJECT_DIR/Sources/FnWhisper/FnPressStateMachine.swift" \
     "$PROJECT_DIR/Sources/FnWhisper/AppConfiguration.swift" \
-    "$PROJECT_DIR/Sources/FnWhisper/TextTargetPolicy.swift" \
     "$PROJECT_DIR/Sources/FnWhisper/AudioRecorder.swift" \
     "$PROJECT_DIR/Sources/FnWhisper/WhisperTranscriber.swift" \
     "$PROJECT_DIR/Sources/FnWhisper/WhisperRuntime.swift" \

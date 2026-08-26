@@ -24,11 +24,11 @@ FnWhisper 是一个仅做语音输入的 macOS 菜单栏 App：在任意输入�
 - 长按 Fn 350 ms 开始录音，短按 Fn 不触发录音。
 - App 运行时独占 Fn 的按下和松开事件，避免 macOS 原有的地球仪、表情、输入源或听写功能抢占；其他修饰键不受影响。
 - 松开 Fn 后停止录音并开始本地转写。
-- 不抢焦点的悬浮状态框会显示“正在听”和“正在本地转成文字”；完成时只显示一个不会写入正文的小图标：`Ⓠ` 表示 Qwen、`Ⓐ` 表示 Apple、`Ⓦ` 表示保留 Whisper/规范化结果、`⌘` 表示命令或代码直出。
+- 不抢焦点的悬浮状态框会显示“正在听”和“正在本地转成文字”；完成时显示不会写入正文的来源图标和简短说明，例如 `Ⓠ 最终由 Qwen3-4B 本地模型整理`。`Ⓐ` 表示 Apple，`Ⓦ` 表示保留 Whisper/规范化结果。
 - 长按 Fn 时固定捕获当前文本输入控件，转写完成后写回同一个输入框；如果焦点在按钮等非输入控件，会立即提示先点击输入位置。
 - 支持 macOS Terminal：终端的 `AXTextArea` 即使不允许直接修改 Accessibility 值，也会作为有效输入焦点并通过 Cmd+V 写入命令行。
 - 默认让 Whisper 在中文与英文语音之间自动检测，输出层只接受中文、英文和中英混说；检测到其他文字脚本时不会写入。
-- 普通输入框会用本机 `sherpa-onnx` CT-Punc 中英 INT8 模型恢复语义标点；Terminal 和常见 IDE/代码编辑器按命令模式处理，不运行 CT-Punc，也不补句末标点，避免破坏命令和代码。
+- 所有输入框（包括 Terminal、IDE 和代码编辑器）都使用同一条本地处理链：CT-Punc 恢复语义标点，再由 Qwen/Apple 整理；不再按应用类型跳过模型。
 - 普通输入框的中英文或中英混合结果会做结构化整理：删除口吃和纯语气词、恢复热词、转换口语数字、处理明确改口，并把具有可靠枚举或并列信号的任务、步骤或要求渲染成数字列表；即使原文只说“一个是、然后、还有、最后”也能识别。不会翻译、回答问题或改变原意。
 - `Qwen3-4B-Instruct-2507 Q4_K_M` 通过本机 `llama-server` 以 fast/non-thinking 模式运行，并与 Apple Foundation Models 并行。Qwen 按转写长度获得 3–5 秒的动态请求窗口，窗口内返回且通过语义保护时优先；否则使用已并行完成的 Apple 结果；两者都失败时保留经过确定性规范化和标点处理的转写。
 - 默认使用完整架构的量化 `large-v3-q5_0` 模型和 Apple Metal GPU 识别；App 启动后会预热仅监听 `127.0.0.1` 的 `whisper-server`，连续输入无需反复加载模型。Metal 常驻服务失败时会明确提示并尝试 CPU，服务整体不可用时再回退到较慢的单次 `whisper-cli`。
@@ -202,7 +202,7 @@ git pull --ff-only
 3. `AudioRecorder` 从麦克风录音；松开 Fn 后转换为 Whisper 需要的 16 kHz、单声道、16-bit PCM WAV。
 4. `WhisperRuntime` 将 WAV 发送到本机回环地址上的常驻 `whisper-server`，使用 `large-v3-q5_0` 和 Metal GPU 转写；服务失败时按“常驻 CPU → 单次 CLI”顺序显式回退。
 5. 普通文本目标把 Whisper 原始文字交给进程内常驻的 `sherpa-onnx` CT-Punc INT8 恢复中英文标点，再进行确定性的语气词、热词和口述数字规范化，随后同时请求本机 Qwen fast 模式和 Apple Foundation Models。Qwen 计时只在说话、Whisper 转写和标点处理全部完成后开始：短、中、长文本分别等待 3、4、5 秒；窗口内返回且通过结构与语义校验时优先，否则使用 Apple；两者均失败则保留经过确定性规范化和标点处理的转写。
-6. Terminal/IDE 目标完全跳过标点和文字整理，保持命令或代码原文。两条路径最后都拒绝中英文之外的文字脚本。
+6. 所有目标都使用相同的标点与文字整理流程，最后统一拒绝中英文之外的文字脚本。
 7. `TextInjector` 重新定位原输入框，优先通过 Cmd+V 写入，并在需要时回退 Accessibility API；随后恢复用户原剪贴板并删除临时录音。
 
 语音和模型推理全程留在本机。详细的模块边界、权限原因和失败处理见 [架构说明](docs/ARCHITECTURE.md)。
@@ -301,7 +301,7 @@ defaults write com.marshall.fnwhisper textModelPath "/absolute/path/model.gguf"
 - 如果使用的键盘重映射工具在 CGEvent 层之前处理 Fn，App 无法拦截该工具的动作，需要在对应工具中取消 Fn 映射。
 - App 运行时短按 Fn 的 macOS 原生动作也会被屏蔽；退出 App 后立即恢复。
 - 当前是“按住说话、松开整段转写”，不是边说边实时流式显示。
-- Terminal 和常见 IDE/代码编辑器有意跳过 CT-Punc；未列入目标分类的终端类 App 可能需要补充 bundle ID。
+- Terminal、IDE 和代码编辑器也会经过 CT-Punc 与 Qwen/Apple 整理，因此口述命令或代码可能被自动加标点或重新排版。
 - Apple Foundation Models 需要 macOS 26 且系统模型处于可用状态；不可用时 Qwen 仍可独立工作。Qwen 超时或结果未通过语义保护时会使用 Apple 或保留经过确定性规范化和标点处理的转写，不会写入被判定为改变原意的结果。
 - 本地临时录音会在转写结束后删除；进程被强制终止时，系统临时目录可能短暂保留未完成文件。
 
