@@ -40,17 +40,25 @@ enum QwenServerProtocol {
         input: TextRefinementInput,
         maximumTokens: Int = 192
     ) throws -> Data {
+        let expectedItemCount = max(
+            TextLayoutHeuristics.explicitOrdinalCount(in: input.source),
+            TextLayoutHeuristics.declaredItemCount(in: input.source) ?? 0
+        )
         let schema: [String: Any] = [
             "type": "object",
             "additionalProperties": false,
-            "required": ["items"],
+            "required": ["lead", "items", "tail"],
             "properties": [
+                "lead": ["type": "string"],
                 "items": [
                     "type": "array",
-                    "minItems": input.requiredFormat == .numberedList ? 2 : 1,
-                    "maxItems": input.requiredFormat == .numberedList ? 8 : 1,
+                    "minItems": input.requiredFormat == .numberedList
+                        ? max(2, expectedItemCount) : 1,
+                    "maxItems": input.requiredFormat == .paragraph
+                        ? 1 : (expectedItemCount >= 2 ? expectedItemCount : 8),
                     "items": ["type": "string"],
                 ],
+                "tail": ["type": "string"],
             ],
         ]
         let body: [String: Any] = [
@@ -169,7 +177,10 @@ final class QwenTextRefiner: TextRefining, @unchecked Sendable {
         }
     }
 
-    func refine(_ text: String) async throws -> TextRefinementResult {
+    func refine(
+        _ text: String,
+        context: TextRefinementContext
+    ) async throws -> TextRefinementResult {
         guard let endpoint = readyEndpoint() else {
             warmUp()
             throw TextRefinementError.unavailable("Qwen 正在启动")
@@ -179,6 +190,7 @@ final class QwenTextRefiner: TextRefining, @unchecked Sendable {
             let input = TextRefinementInput.prepare(text)
             let payload = try await requestRefinement(
                 input: input,
+                context: context,
                 endpoint: endpoint
             )
             return TextRefinementResult(
@@ -212,7 +224,7 @@ final class QwenTextRefiner: TextRefining, @unchecked Sendable {
         guard FileManager.default.fileExists(atPath: modelURL.path) else {
             return "Qwen 模型未找到：\(modelURL.path)"
         }
-        return "\(modelURL.lastPathComponent) fast 模式已配置（按文本长度 3–5 秒回退）"
+        return "\(modelURL.lastPathComponent) fast 模式已配置（按文本与录音时长动态回退）"
     }
 
     private func readyEndpoint() -> QwenServerEndpoint? {
@@ -329,9 +341,13 @@ final class QwenTextRefiner: TextRefining, @unchecked Sendable {
 
     private func requestRefinement(
         input: TextRefinementInput,
+        context: TextRefinementContext,
         endpoint: QwenServerEndpoint
     ) async throws -> TextRefinementPayload {
-        let timeout = AppConfiguration.textRefinementTimeout(for: input.source)
+        let timeout = AppConfiguration.textRefinementTimeout(
+            for: input.source,
+            speechDuration: context.speechDuration
+        )
         var request = URLRequest(url: endpoint.chatCompletionsURL)
         request.httpMethod = "POST"
         request.timeoutInterval = timeout

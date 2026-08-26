@@ -105,7 +105,7 @@ brew bundle --file Brewfile
 - Metal：11 秒 JFK 样本在 M4 Pro 16 核 GPU 上为 3.03 秒，CPU 8 线程为 12.60 秒；输出完全一致，Metal 快约 4.2 倍。
 - 常驻 Whisper：6.95 秒中文样本多轮首次请求 2.967–3.206 秒，热请求 1.949–1.999 秒；测试退出后确认没有遗留 `whisper-server` helper。
 - CT-Punc：中英文 INT8 模型真实恢复中文陈述句、问句和中英混排标点；独立冷启动测试句总耗时 0.08 秒。模型输出仍可能误判个别问号或逗号。
-- 文字整理：Qwen3-4B-Instruct-2507 Q4_K_M 使用 fast/non-thinking 模式，预热 1.5–2.7 秒，27 条固定中英语料的热请求为 0.18–1.31 秒且全部通过；按转写长度使用 3–5 秒动态回退窗口。Apple Foundation Models 当前端到端回退样本为 0.9–1.7 秒。热词、口语数字、改口、状态标记、责任归属、段落与数字列表均完成真实模型验证。
+- 文字整理：Qwen3-4B-Instruct-2507 Q4_K_M 使用 fast/non-thinking 模式，预热 1.5–2.7 秒，27 条固定中英语料的热请求为 0.18–1.31 秒且全部通过；回退窗口同时参考转写长度和 WAV 录音时长，范围 3–10 秒（10 秒录音为 6.5 秒）。2026-08-26 追加真实模型验证：因果/时间叙事保持段落；明确 3 个动作输出局部 1–3 列表并保留前后段落，Qwen 热请求分别为约 0.59 秒和 0.44 秒。Apple Foundation Models 当前端到端回退样本为 0.9–1.7 秒。热词、口语数字、改口、状态标记、责任归属、段落与数字列表均完成真实模型验证。
 - 写回：原生 TextEdit 与 macOS Terminal 均完成实际 Cmd+V 写入验证；Terminal 测试命令只输出本地测试标记。
 - GPU：Apple M4 Pro 16 核。Homebrew whisper.cpp 1.9.2 Metal 在普通应用环境工作正常；受限命令沙箱会拒绝 Metal buffer 分配，应用会自动回退 CPU。
 - Intel：源代码包含 Intel Homebrew 路径，但尚未在 Intel Mac 上完成实机验证。

@@ -265,7 +265,10 @@ private struct DelayedTextRefiner: TextRefining, @unchecked Sendable {
     let output: String
     let shouldFail: Bool
 
-    func refine(_ text: String) async throws -> TextRefinementResult {
+    func refine(
+        _ text: String,
+        context _: TextRefinementContext
+    ) async throws -> TextRefinementResult {
         try await Task.sleep(nanoseconds: delayNanoseconds)
         if shouldFail {
             throw StubTextRefinerError.expectedFailure
@@ -310,7 +313,10 @@ private final class GatedTextRefiner: TextRefining, @unchecked Sendable {
         self.provider = provider
     }
 
-    func refine(_ text: String) async throws -> TextRefinementResult {
+    func refine(
+        _ text: String,
+        context _: TextRefinementContext
+    ) async throws -> TextRefinementResult {
         await gate.wait()
         return TextRefinementResult(text: text, provider: provider)
     }
@@ -335,7 +341,7 @@ private func testParallelTextRefinerRacing() async {
                 output: "apple",
                 shouldFail: false
             ),
-            timeoutProvider: { _ in 0.1 }
+            timeoutProvider: { _, _ in 0.1 }
         )
         let result = try await refiner.refine("test")
         expect(
@@ -360,7 +366,7 @@ private func testParallelTextRefinerRacing() async {
                 output: "apple",
                 shouldFail: false
             ),
-            timeoutProvider: { _ in 0.1 }
+            timeoutProvider: { _, _ in 0.1 }
         )
         let result = try await refiner.refine("test")
         expect(
@@ -381,7 +387,7 @@ private func testParallelTextRefinerRacing() async {
                 output: "apple",
                 shouldFail: false
             ),
-            timeoutProvider: { _ in 0.03 }
+            timeoutProvider: { _, _ in 0.03 }
         )
         defer { qwen.release() }
         let result = try await refiner.refine("test")
@@ -399,7 +405,7 @@ private func testParallelTextRefinerRacing() async {
         let refiner = ParallelTextRefiner(
             qwen: qwen,
             apple: apple,
-            timeoutProvider: { _ in 0.03 }
+            timeoutProvider: { _, _ in 0.03 }
         )
         let safetyRelease = Task.detached {
             try? await Task.sleep(nanoseconds: 500_000_000)
@@ -436,7 +442,7 @@ private func testParallelTextRefinerRacing() async {
                 shouldFail: false
             ),
             apple: apple,
-            timeoutProvider: { _ in 0.2 }
+            timeoutProvider: { _, _ in 0.2 }
         )
         let safetyRelease = Task.detached {
             try? await Task.sleep(nanoseconds: 500_000_000)
@@ -456,6 +462,36 @@ private func testParallelTextRefinerRacing() async {
         )
     } catch {
         expect(false, "Qwen 成功的快速路径不应失败：\(error)")
+    }
+
+    do {
+        let refiner = ParallelTextRefiner(
+            qwen: DelayedTextRefiner(
+                delayNanoseconds: 60_000_000,
+                provider: .qwen,
+                output: "qwen",
+                shouldFail: false
+            ),
+            apple: DelayedTextRefiner(
+                delayNanoseconds: 1_000_000,
+                provider: .apple,
+                output: "apple",
+                shouldFail: false
+            ),
+            timeoutProvider: { _, speechDuration in
+                speechDuration == 10 ? 0.15 : 0.02
+            }
+        )
+        let result = try await refiner.refine(
+            "test",
+            context: TextRefinementContext(speechDuration: 10)
+        )
+        expect(
+            result.provider == .qwen,
+            "录音时长必须传入并行 deadline，给长语音的 Qwen 留出更长窗口"
+        )
+    } catch {
+        expect(false, "录音时长上下文不应丢失：\(error)")
     }
 }
 
@@ -642,7 +678,7 @@ private func testTextRefinementValidation() {
     )
     let englishListRequest = TextRefinementPrompt.request(
         for: TextRefinementInput.prepare(
-            "first run the tests then update the docs also send the result"
+            "first run the tests second update the docs third send the result"
         )
     )
     expect(
@@ -1225,6 +1261,77 @@ private func testTextRefinementValidation() {
         expect(true, "叙事句列表保护已生效")
     }
 
+    expect(
+        TextRefinementInput.prepare(
+            "今天解释了背景；然后排查问题；后来回家休息"
+        ).requiredFormat == nil,
+        "分号和多个时间推进词不能直接强制整段列表化"
+    )
+    expect(
+        TextRefinementInput.prepare(
+            "这个方案还有风险，然后需要继续观察"
+        ).requiredFormat == nil,
+        "还有和然后不能单独作为编号列表证据"
+    )
+    expect(
+        TextRefinementInput.prepare(
+            "我先解释为什么会发生，然后检查日志，后来发现是配置问题，所以继续观察，不要整理成1234列表"
+        ).requiredFormat == .paragraph,
+        "明显的因果叙事或拒绝列表表达应锁定为自然段落"
+    )
+    let countedActions = TextRefinementInput.prepare(
+        "前面保持说明。中间只有三个可执行动作：更新提示词，传递录音时长，运行回归测试。完成后继续说明结论。"
+    )
+    expect(
+        countedActions.requiredFormat == .numberedList
+            && TextLayoutHeuristics.declaredItemCount(
+                in: countedActions.source
+            ) == 3,
+        "明确数量的动作集合应按声明数量识别为可靠列表"
+    )
+    expect(
+        !TextRefinementPrompt.request(for: countedActions)
+            .contains("中间只有3个可执行动作"),
+        "客户端保留的计数型列表引导语不应交给模型重复"
+    )
+
+    do {
+        let mixed = try TextRefinementValidator.validateAndRender(
+            TextRefinementPayload(
+                lead: "这次先保留整体说明。可执行动作包括：",
+                items: [
+                    "更新提示词",
+                    "传递录音时长",
+                    "运行回归测试",
+                ],
+                tail: "完成后继续用自然段说明结论。"
+            ),
+            source: "这次先保留整体说明。可执行动作包括：更新提示词，传递录音时长，运行回归测试。完成后继续用自然段说明结论。"
+        )
+        expect(
+            mixed == "这次先保留整体说明。可执行动作包括：\n\n1. 更新提示词\n2. 传递录音时长\n3. 运行回归测试\n\n完成后继续用自然段说明结论。",
+            "长段落应支持只把局部并列动作渲染为数字列表"
+        )
+    } catch {
+        expect(false, "局部并列列表不应被拒绝：\(error)")
+    }
+
+    do {
+        let salvaged = try TextRefinementValidator.validateAndRender(
+            TextRefinementPayload(
+                lead: "前面的背景保持自然段落。中间有3个动作：更新提示词，传递录音时长，运行回归测试。完成后继续说明结论。",
+                items: ["更新提示词", "传递录音时长", "运行回归测试"]
+            ),
+            source: "前面的背景保持自然段落。中间有3个动作：更新提示词，传递录音时长，运行回归测试。完成后继续说明结论。"
+        )
+        expect(
+            salvaged == "前面的背景保持自然段落。中间有3个动作：\n\n1. 更新提示词\n2. 传递录音时长\n3. 运行回归测试\n\n完成后继续说明结论。",
+            "模型把局部列表重复放进 lead 时应确定性拆出而不是重复显示"
+        )
+    } catch {
+        expect(false, "可确定修复的局部列表重复不应回退：\(error)")
+    }
+
     do {
         let paragraph = try TextRefinementValidator.validateAndRender(
             TextRefinementPayload(
@@ -1368,8 +1475,9 @@ private func testQwenServerProtocol() {
         let paragraphItems = properties?["items"] as? [String: Any]
         expect(
             paragraphItems?["minItems"] as? Int == 1
-                && paragraphItems?["maxItems"] as? Int == 1,
-            "普通句子 schema 必须只允许一个 item"
+                && paragraphItems?["maxItems"] as? Int == 8
+                && properties?.count == 3,
+            "自动布局 schema 应允许一个段落或 2–8 个并列事项"
         )
 
         let forcedData = try QwenServerProtocol.requestBody(
@@ -1385,8 +1493,8 @@ private func testQwenServerProtocol() {
         expect(
             forcedItems?["minItems"] as? Int == 2
                 && forcedItems?["maxItems"] as? Int == 8
-                && forcedProperties?.count == 1,
-            "数字列表 schema 必须只允许 2–8 个 items"
+                && forcedProperties?.count == 3,
+            "数字列表 schema 应允许 lead、2–8 个 items 和 tail"
         )
     } catch {
         expect(false, "Qwen 请求结构应可序列化：\(error)")
@@ -1470,6 +1578,27 @@ private func testLanguageNormalization() {
             for: "\n  \(String(repeating: "中", count: 13))  "
         ) == 4,
         "空白字符不应延长 Qwen 等待时间"
+    )
+    expect(
+        AppConfiguration.textRefinementTimeout(
+            for: "这是一段十秒左右的录音",
+            speechDuration: 10
+        ) == 6.5,
+        "10 秒录音应给 Qwen 6.5 秒完成整理"
+    )
+    expect(
+        AppConfiguration.textRefinementTimeout(
+            for: "很长的录音",
+            speechDuration: 60
+        ) == 10,
+        "长录音的 Qwen 等待时间应封顶为 10 秒"
+    )
+    expect(
+        AppConfiguration.textRefinementTimeout(
+            for: "short input",
+            speechDuration: .nan
+        ) == 3,
+        "无效录音时长应安全回退到文本长度策略"
     )
     expect(
         AppConfiguration.normalizedThreadCount(nil, processorCount: 12) == 8,

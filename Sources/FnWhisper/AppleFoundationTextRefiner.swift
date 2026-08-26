@@ -37,7 +37,10 @@ final class AppleFoundationTextRefiner: TextRefining, @unchecked Sendable {
         return AppleFoundationTextRefiner()
     }
 
-    func refine(_ text: String) async throws -> TextRefinementResult {
+    func refine(
+        _ text: String,
+        context _: TextRefinementContext
+    ) async throws -> TextRefinementResult {
         guard case .available = SystemLanguageModel.default.availability else {
             throw TextRefinementError.unavailable(
                 "Apple Foundation Models 当前不可用"
@@ -51,6 +54,7 @@ final class AppleFoundationTextRefiner: TextRefining, @unchecked Sendable {
         let response = try await session.respond(
             to: TextRefinementPrompt.request(for: input),
             schema: try Self.generationSchema(
+                input: input,
                 requiredFormat: input.requiredFormat
             ),
             options: GenerationOptions(
@@ -79,19 +83,27 @@ final class AppleFoundationTextRefiner: TextRefining, @unchecked Sendable {
     }
 
     private static func generationSchema(
+        input: TextRefinementInput,
         requiredFormat: TextRefinementFormat?
     ) throws -> GenerationSchema {
         let text = DynamicGenerationSchema(type: String.self)
         let isList = requiredFormat == .numberedList
+        let expectedItemCount = max(
+            TextLayoutHeuristics.explicitOrdinalCount(in: input.source),
+            TextLayoutHeuristics.declaredItemCount(in: input.source) ?? 0
+        )
         let items = DynamicGenerationSchema(
             arrayOf: text,
-            minimumElements: isList ? 2 : 1,
-            maximumElements: isList ? 8 : 1
+            minimumElements: isList ? max(2, expectedItemCount) : 1,
+            maximumElements: requiredFormat == .paragraph
+                ? 1 : (expectedItemCount >= 2 ? expectedItemCount : 8)
         )
         let root = DynamicGenerationSchema(
             name: "RefinedText",
             properties: [
+                .init(name: "lead", schema: text),
                 .init(name: "items", schema: items),
+                .init(name: "tail", schema: text),
             ]
         )
         return try GenerationSchema(root: root, dependencies: [])

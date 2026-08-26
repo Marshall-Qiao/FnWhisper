@@ -262,7 +262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         llama-server：\(configuration.resolveLlamaServer()?.path ?? "未找到")
         Qwen 模型路径：\(configuration.textModelURL.path)
         Apple Foundation Models：\(AppleFoundationTextRefinerFactory.diagnosticDescription)
-        选择规则：Qwen fast 模式优先，按文本长度等待 3–5 秒，未成功则使用并行的 Apple 结果
+        选择规则：Qwen fast 模式优先，按文本与录音时长动态等待 3–10 秒，未成功则使用并行的 Apple 结果
         计算后端：\(configuration.useGPU ? "Metal GPU（失败时自动回退 CPU）" : "CPU")
         CPU 线程：\(configuration.threadCount)
         \(PermissionManager.diagnosticReport)

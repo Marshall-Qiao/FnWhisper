@@ -23,7 +23,7 @@ if CommandLine.arguments.contains("--diagnose") {
         "Qwen 模型状态：\(FileManager.default.fileExists(atPath: configuration.textModelURL.path) ? "已找到" : "未找到")"
     )
     print(
-        "Qwen 模式：fast/non-thinking，按文本长度 \(Int(AppConfiguration.minimumTextRefinementTimeout))–\(Int(AppConfiguration.maximumTextRefinementTimeout)) 秒回退"
+        "Qwen 模式：fast/non-thinking，按文本与录音时长动态等待 \(Int(AppConfiguration.minimumTextRefinementTimeout))–\(Int(AppConfiguration.maximumTextRefinementTimeout)) 秒"
     )
     print(
         "Apple Foundation Models：\(AppleFoundationTextRefinerFactory.diagnosticDescription)"
@@ -225,7 +225,16 @@ if let refinementIndex = CommandLine.arguments.firstIndex(
         qwen = nil
     }
     let apple = AppleFoundationTextRefinerFactory.makeIfAvailable()
-    let refiner = ParallelTextRefiner(qwen: qwen, apple: apple)
+    let refiner = ParallelTextRefiner(
+        qwen: qwen,
+        apple: apple,
+        failureReporter: { provider, error in
+            FileHandle.standardError.write(
+                "\(provider) 整理未采用：\(error.localizedDescription)\n"
+                    .data(using: .utf8)!
+            )
+        }
+    )
 
     Task {
         if let qwen {

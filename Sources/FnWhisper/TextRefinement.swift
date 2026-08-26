@@ -6,7 +6,34 @@ enum TextRefinementFormat: String, Codable {
 }
 
 struct TextRefinementPayload: Codable, Equatable {
+    let lead: String
     let items: [String]
+    let tail: String
+
+    init(lead: String = "", items: [String], tail: String = "") {
+        self.lead = lead
+        self.items = items
+        self.tail = tail
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case lead
+        case items
+        case tail
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        lead = try container.decodeIfPresent(String.self, forKey: .lead) ?? ""
+        items = try container.decode([String].self, forKey: .items)
+        tail = try container.decodeIfPresent(String.self, forKey: .tail) ?? ""
+    }
+}
+
+struct TextRefinementContext: Sendable, Equatable {
+    let speechDuration: TimeInterval?
+
+    static let unspecified = TextRefinementContext(speechDuration: nil)
 }
 
 struct TextRefinementInput: Equatable {
@@ -19,7 +46,9 @@ struct TextRefinementInput: Equatable {
         let requiredFormat = parsed.requiredFormat
             ?? (TextLayoutHeuristics.hasReliableListEvidence(source)
                 ? .numberedList
-                : nil)
+                : (TextLayoutHeuristics.shouldPreserveAsParagraph(source)
+                    ? .paragraph
+                    : nil))
         return TextRefinementInput(
             source: source,
             requiredFormat: requiredFormat
@@ -32,20 +61,76 @@ enum TextLayoutHeuristics {
         #"(?!第[一二三四五六七八九十百0-9]+[版章节季代期轮次名个号年月日周天])第[一二三四五六七八九十百0-9]+(?:(?:项|条|点|步)[、，,：:.]?|[、，,：:.]|(?![版章节季代期轮次名个号年月日周天]))"#
 
     static func hasReliableListEvidence(_ text: String) -> Bool {
-        if explicitOrdinalCount(in: text) >= 2
-            || text.contains("；")
-            || text.contains(";") {
+        if explicitOrdinalCount(in: text) >= 2 {
             return true
         }
-        let chinesePattern = "一个是|另一个(?:是)?|首先|其次|然后|还有|另外|最后|以及|同时"
-        let englishPattern = #"(?i)(?<![A-Za-z])(?:first(?:ly)?|second(?:ly)?|third(?:ly)?|then|also|next|finally|additionally)(?![A-Za-z])"#
-        let signalCount = matches(pattern: chinesePattern, in: text).count
-            + matches(pattern: englishPattern, in: text).count
-        if signalCount >= 2 {
+        if declaredItemCount(in: text) != nil {
             return true
         }
-        return signalCount >= 1
-            && (text.contains("下面的事情") || text.contains("以下事项"))
+        let pairedPatterns = [
+            #"一个是.+另一个(?:是)?"#,
+            #"首先.+其次"#,
+            #"第一个.+第二个"#,
+            #"(?i)(?<![A-Za-z])first(?:ly)?(?![A-Za-z]).+(?<![A-Za-z])second(?:ly)?(?![A-Za-z])"#,
+        ]
+        if pairedPatterns.contains(where: {
+            !matches(pattern: $0, in: text).isEmpty
+        }) {
+            return true
+        }
+        let hasListLead = !matches(
+            pattern: #"(?:下面的事情|以下事项|以下内容|有[一二三四五六七八九十0-9]+(?:件事|项|点|个任务)|分为[一二三四五六七八九十0-9]+(?:项|点|步)|包括如下)"#,
+            in: text
+        ).isEmpty
+        let itemCueCount = matches(
+            pattern: #"一个是|另一个(?:是)?|首先|其次|还有(?:一个)?|另外(?:一个)?|最后(?:还有一个)?"#,
+            in: text
+        ).count
+        return hasListLead && itemCueCount >= 2
+    }
+
+    static func allowsAutomaticList(_ text: String) -> Bool {
+        if hasReliableListEvidence(text) {
+            return true
+        }
+        let explicitParallelCueCount = matches(
+            pattern: #"一个是|另一个(?:是)?|首先|其次|还有(?:一个)?|另外(?:一个)?|最后(?:还有一个)?"#,
+            in: text
+        ).count + matches(
+            pattern: #"(?i)(?<![A-Za-z])(?:first(?:ly)?|second(?:ly)?|third(?:ly)?|additionally|finally)(?![A-Za-z])"#,
+            in: text
+        ).count
+        if explicitParallelCueCount >= 2 {
+            return true
+        }
+        let clauseCount = text.split(whereSeparator: {
+            "，,。；;！？!?\n".contains($0)
+        }).filter {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }.count
+        let weakSequenceCueCount = matches(
+            pattern: #"然后|接着|后来|(?i:(?<![A-Za-z])then(?![A-Za-z]))"#,
+            in: text
+        ).count
+        return clauseCount >= 3 && weakSequenceCueCount != 1
+    }
+
+    static func shouldPreserveAsParagraph(_ text: String) -> Bool {
+        if hasReliableListEvidence(text) {
+            return false
+        }
+        let rejectsList = !matches(
+            pattern: #"(?:不是|不要|无需|不需要).{0,18}(?:1234|数字列表|编号列表|列表|分点)|(?i:(?:do not|don't|not).{0,24}(?:numbered list|list))"#,
+            in: text
+        ).isEmpty
+        if rejectsList {
+            return true
+        }
+        let narrativeCueCount = matches(
+            pattern: #"为什么|因为|所以|后来|结果|于是|发现|原来|导致|等到|之后|最终|(?i:(?<![A-Za-z])(?:because|therefore|later|found|realized|eventually|as a result)(?![A-Za-z]))"#,
+            in: text
+        ).count
+        return narrativeCueCount >= 2
     }
 
     static func explicitOrdinalCount(in text: String) -> Int {
@@ -62,6 +147,25 @@ enum TextLayoutHeuristics {
             in: text
         ).map { $0.lowercased() }).count
         return max(chinese, arabic, english)
+    }
+
+    static func declaredItemCount(in text: String) -> Int? {
+        let normalized = TextSpokenNumberNormalizer.normalize(text)
+        guard let expression = try? NSRegularExpression(
+            pattern: #"(?<!\d)([2-8])\s*(?:件事|项|点|个(?:可执行)?(?:动作|任务|事项|事情))"#
+        ) else {
+            return nil
+        }
+        let range = NSRange(
+            normalized.startIndex..<normalized.endIndex,
+            in: normalized
+        )
+        guard let match = expression.firstMatch(in: normalized, range: range),
+              let countRange = Range(match.range(at: 1), in: normalized)
+        else {
+            return nil
+        }
+        return Int(normalized[countRange])
     }
 
     static func leadingContextBeforeFirstOrdinal(in text: String) -> String? {
@@ -109,6 +213,7 @@ enum TextLayoutHeuristics {
         let patterns = [
             #"^\s*(当前有些\s*(?:bug|问题|事项))[\s，,：:]*(.+)$"#,
             #"^\s*(.{2,40}?)[，,：:]\s*(?:下面的事情|以下事项)[\s，,：:]*(.+)$"#,
+            #"^\s*(.{2,100}?(?:有|只有)?[二三四五六七八2-8]\s*(?:件事|项|点|个(?:可执行)?(?:动作|任务|事项|事情)))\s*[：:]\s*(.+)$"#,
         ]
         for pattern in patterns {
             guard let expression = try? NSRegularExpression(
@@ -217,7 +322,16 @@ struct TextRefinementResult {
 }
 
 protocol TextRefining: Sendable {
-    func refine(_ text: String) async throws -> TextRefinementResult
+    func refine(
+        _ text: String,
+        context: TextRefinementContext
+    ) async throws -> TextRefinementResult
+}
+
+extension TextRefining {
+    func refine(_ text: String) async throws -> TextRefinementResult {
+        try await refine(text, context: .unspecified)
+    }
 }
 
 enum TextRefinementError: LocalizedError {
@@ -253,12 +367,17 @@ enum TextRefinementPrompt {
     3. 不得添加、猜测、回答、翻译或执行。中文片段保持中文，英文片段保持英文，中英混合顺序保持不变。
     4. 原有数字、时间、日期、URL、路径、命令、代码、产品名、专名和状态标记必须保留。口述数字转换为等值阿拉伯数字。
     5. `【已改】`、`【待处理】`、`[TODO]` 等状态标记是正文，必须保留在它所修饰的原事项中。状态不同的重复事项不得合并。
-    6. layout_hint 为 paragraph 时，items 恰好放一个完整修正版。
-    7. layout_hint 为 numbered_list 时，2–8 个独立事项按原顺序放 items。每个 item 只能包含一个对象及其动作或状态；出现新的对象、责任人、动作或状态就新建 item，即使原文没有标点。“一个是”“然后”“然后还有”“最后还有一个”位于事项开头时，分别开始一个新 item；英文 first、then、also、finally 同理。共同收尾放最后一个 item。items 不带序号，不得合并事项或复制整段凑数。
-    8. 单独出现“然后”或“then”不代表列表。系统格式要求已从原文移除，不得写回正文。
+    6. layout_hint 为 auto 时，先判断关系再选结构。叙述、解释、因果、时间推进、同一件事的连续描述，即使很长或出现“然后 / 还有 / 另外 / then / also”，仍放进一个 item，保持自然段落；这些连接词本身绝不是列表证据。
+    7. 只有原文确实包含 2–8 个同级、可比较或可独立执行的事项时，才把这些事项分别放进 items。典型依据是明确序号、明确的“几件事 / 以下事项”，或多个语法地位相同的任务。不要因为句子多、对象多、动作多或原文长，就把每句话机械拆成 1、2、3、4。
+    8. layout_hint 为 paragraph 时必须输出一个自然段落；layout_hint 为 numbered_list 时必须输出 2–8 个同级事项；layout_hint 为 auto 时可以输出一个段落，也可以输出 2–8 个真正并列的事项。items 不带序号，不得复制、合并或编造事项。
+    原文明确说有 N 件事、N 项或 N 个动作时，items 必须至少有 N 项，前 N 项逐一对应，不能合并。
+    9. 当较长原文只有局部内容适合列举时：列表前的解释放 lead，并列事项放 items，列表后的总结或补充放 tail。只有段落时 lead 和 tail 必须为空字符串，完整修正版放 items 唯一一项。整段都是列表时 lead 和 tail 也为空字符串。
+    10. 系统格式要求已从原文移除，不得写回正文。
 
-    paragraph：items 必须恰好有一个非空项。
+    auto：items 为 1 个自然段落，或 2–8 个真正并列事项。
+    paragraph：items 必须恰好有 1 个非空项。
     numbered_list：items 必须有 2–8 个非空项。
+    lead 和 tail 只用于包住局部列表，不得添加标题或解释。
     各字段只能包含整理后的原文，不得添加解释、标题、JSON 文本、Markdown、思考标签或其他字段。
     """
 
@@ -273,21 +392,33 @@ enum TextRefinementPrompt {
         } else {
             encoded = "\"\(input.source)\""
         }
-        let layoutHint = input.requiredFormat == .numberedList
-            ? TextRefinementFormat.numberedList.rawValue
-            : TextRefinementFormat.paragraph.rawValue
+        let layoutHint: String
+        switch input.requiredFormat {
+        case .numberedList:
+            layoutHint = TextRefinementFormat.numberedList.rawValue
+        case .paragraph:
+            layoutHint = TextRefinementFormat.paragraph.rawValue
+        case nil:
+            layoutHint = "auto"
+        }
         let requestExample: String
         let containsChinese = modelSource.unicodeScalars.contains {
             $0.properties.isIdeographic
         }
         if input.requiredFormat == .numberedList {
-            requestExample = containsChinese
+            let declaredCount = TextLayoutHeuristics.declaredItemCount(
+                in: input.source
+            )
+            let countRequirement = declaredCount.map {
+                "原文声明了 \($0) 个并列事项；items 必须正好有 \($0) 个互不重复的项，并逐一对应。\n"
+            } ?? ""
+            requestExample = countRequirement + (containsChinese
                 ? "系统拆分示例（只说明结构）：`A由后端修 B由前端改 C已完成` 应拆成 `A由后端修`、`B由前端改`、`C已完成`。\n"
-                : "System splitting example (structure only): `first run the tests then update the docs` becomes `run the tests`, `update the docs`. Keep English in English.\n"
+                : "System splitting example (structure only): `first run the tests then update the docs` becomes `run the tests`, `update the docs`. Keep English in English.\n")
         } else if !containsChinese {
-            requestExample = "Language example: `I need to update the docs` stays in English as `I need to update the docs`; never translate it.\n"
+            requestExample = "Language example: `I went to the store, then went home to cook` remains one paragraph; `I have three tasks: test, deploy, and report` may become three items. Keep English in English.\n"
         } else {
-            requestExample = ""
+            requestExample = "结构示例：`我下班后去超市，然后回家做饭` 是一段叙述，不是两个列表项；`我有三件事：测试、发布、通知团队` 才可拆成三个事项。\n"
         }
         return "系统 layout_hint：\(layoutHint)\n\(requestExample)原文 JSON 字符串：\n\(encoded)"
     }
@@ -424,10 +555,26 @@ enum TextRefinementValidator {
             throw TextRefinementError.invalidResponse("原文为空")
         }
 
-        let rawItems = restoreMissingStatusMarkers(
-            in: payload.items.map(normalizeGeneratedText),
+        let restoredSections = restoreMissingStatusMarkers(
+            in: ([payload.lead] + payload.items + [payload.tail])
+                .map(normalizeGeneratedText),
             source: source
         )
+        let modelLead = restoredSections.first ?? ""
+        let modelTail = restoredSections.last ?? ""
+        var rawItems = Array(restoredSections.dropFirst().dropLast())
+            .filter { !$0.isEmpty }
+        let declaredCount = TextLayoutHeuristics.declaredItemCount(in: source) ?? 0
+        var deterministicTail = ""
+        if requiredFormat == .numberedList,
+           declaredCount >= 2,
+           let recovered = deterministicDeclaredList(
+            in: source,
+            itemCount: declaredCount
+           ) {
+            rawItems = recovered.items
+            deterministicTail = recovered.tail
+        }
         guard !rawItems.isEmpty,
               rawItems.count <= 8,
               rawItems.allSatisfy({ !$0.isEmpty })
@@ -437,10 +584,15 @@ enum TextRefinementValidator {
             )
         }
 
-        if requiredFormat != .numberedList {
-            guard rawItems.count == 1 else {
+        if rawItems.count == 1 {
+            guard requiredFormat != .numberedList else {
                 throw TextRefinementError.invalidResponse(
-                    "paragraph 必须恰好包含一个 item"
+                    "numbered_list 必须包含 2–8 个非空 items"
+                )
+            }
+            guard modelLead.isEmpty, modelTail.isEmpty else {
+                throw TextRefinementError.invalidResponse(
+                    "段落模式的 lead 和 tail 必须为空"
                 )
             }
             let text = rawItems[0]
@@ -451,6 +603,18 @@ enum TextRefinementValidator {
                 isList: false
             )
             return text
+        }
+
+        guard requiredFormat != .paragraph else {
+            throw TextRefinementError.invalidResponse(
+                "paragraph 必须恰好包含一个 item"
+            )
+        }
+        if requiredFormat == nil,
+           !TextLayoutHeuristics.allowsAutomaticList(source) {
+            throw TextRefinementError.invalidResponse(
+                "原文缺少可靠的并列事项关系"
+            )
         }
 
         var items = rawItems.map(removeLeadingNumbering)
@@ -466,24 +630,47 @@ enum TextRefinementValidator {
         }
 
         let explicitCount = TextLayoutHeuristics.explicitOrdinalCount(in: source)
-        let lead = TextLayoutHeuristics.leadingContextForList(in: source)
+        let expectedListCount = max(explicitCount, declaredCount)
+        let deterministicLead = TextLayoutHeuristics
+            .leadingContextForList(in: source)
             .map(normalizeGeneratedText)
+        var lead = deterministicLead ?? (modelLead.isEmpty ? nil : modelLead)
         if let lead,
            let first = items.first,
            let remainder = removingLeadingContext(lead, from: first) {
             items[0] = removeLeadingNumbering(remainder)
         }
-        if explicitCount >= 2, items.count < explicitCount {
+        if expectedListCount >= 2, items.count < expectedListCount {
             throw TextRefinementError.invalidResponse(
-                "枚举项不足（原文至少=\(explicitCount)，结果=\(items.count)）"
+                "枚举项不足（原文至少=\(expectedListCount)，结果=\(items.count)，lead=\(modelLead.count) 字，tail=\(modelTail.count) 字）"
             )
         }
-        let listItems = (explicitCount >= 2
-            ? Array(items.prefix(explicitCount))
+        let listItems = (expectedListCount >= 2
+            ? Array(items.prefix(expectedListCount))
             : items).map(removeLeadingListCue)
-        let trailingItems = explicitCount >= 2
-            ? Array(items.dropFirst(explicitCount))
+        var trailingItems = expectedListCount >= 2
+            ? Array(items.dropFirst(expectedListCount))
             : []
+        if !modelTail.isEmpty {
+            trailingItems.append(modelTail)
+        } else if !deterministicTail.isEmpty {
+            trailingItems.append(deterministicTail)
+        }
+        let embeddedListContainer = deterministicLead != nil
+            && !modelLead.isEmpty ? modelLead : lead
+        if modelTail.isEmpty,
+           let embeddedListContainer,
+           let extracted = extractingEmbeddedList(
+            listItems,
+            from: embeddedListContainer
+           ) {
+            if deterministicLead == nil {
+                lead = extracted.lead.isEmpty ? nil : extracted.lead
+            }
+            if !extracted.tail.isEmpty {
+                trailingItems.append(extracted.tail)
+            }
+        }
         guard Set(listItems + trailingItems).count
                 == listItems.count + trailingItems.count
         else {
@@ -1132,7 +1319,7 @@ enum TextRefinementValidator {
             in: prepared,
             with: "\n"
         )
-        let separators = CharacterSet(charactersIn: "，,。；;！？!?\n")
+        let separators = CharacterSet(charactersIn: "，,。；;：:！？!?\n")
         return prepared.components(separatedBy: separators)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
@@ -1410,6 +1597,90 @@ enum TextRefinementValidator {
         return nil
     }
 
+    private static func extractingEmbeddedList(
+        _ items: [String],
+        from paragraph: String
+    ) -> (lead: String, tail: String)? {
+        guard let firstItem = items.first,
+              let firstRange = paragraph.range(of: firstItem)
+        else {
+            return nil
+        }
+        var cursor = firstRange.upperBound
+        var lastRange = firstRange
+        for item in items.dropFirst() {
+            guard let range = paragraph.range(
+                of: item,
+                range: cursor..<paragraph.endIndex
+            ) else {
+                return nil
+            }
+            lastRange = range
+            cursor = range.upperBound
+        }
+        let leadSeparators = CharacterSet.whitespacesAndNewlines.union(
+            CharacterSet(charactersIn: "，,；;")
+        )
+        let lead = String(paragraph[..<firstRange.lowerBound])
+            .trimmingCharacters(in: leadSeparators)
+        let rawTail = String(paragraph[lastRange.upperBound...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let leadingTailSeparators = Set("，,。；;")
+        let tail = String(rawTail.drop(while: {
+            leadingTailSeparators.contains($0)
+        })).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (lead, tail)
+    }
+
+    private static func deterministicDeclaredList(
+        in source: String,
+        itemCount: Int
+    ) -> (items: [String], tail: String)? {
+        guard itemCount >= 2 else {
+            return nil
+        }
+        var remainder = TextLayoutHeuristics.modelContentForList(in: source)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        var items: [String] = []
+        let separators = Set("，,；;")
+        for _ in 0..<(itemCount - 1) {
+            guard let boundary = remainder.firstIndex(where: {
+                separators.contains($0)
+            }) else {
+                return nil
+            }
+            let item = String(remainder[..<boundary])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !item.isEmpty else {
+                return nil
+            }
+            items.append(removeLeadingListCue(item))
+            remainder = String(remainder[remainder.index(after: boundary)...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        let terminalPunctuation = Set("。.!！?？")
+        let finalBoundary = remainder.firstIndex(where: {
+            terminalPunctuation.contains($0)
+        })
+        let finalItem: String
+        let tail: String
+        if let finalBoundary {
+            finalItem = String(remainder[..<finalBoundary])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            tail = String(remainder[remainder.index(after: finalBoundary)...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            finalItem = remainder
+            tail = ""
+        }
+        guard !finalItem.isEmpty else {
+            return nil
+        }
+        items.append(removeLeadingListCue(finalItem))
+        return (items, tail)
+    }
+
     private static func restoreMissingStatusMarkers(
         in originalItems: [String],
         source: String
@@ -1585,21 +1856,36 @@ private final class ParallelTextRefinementEventRelay: @unchecked Sendable {
 final class ParallelTextRefiner: TextRefining, @unchecked Sendable {
     private let qwen: TextRefining?
     private let apple: TextRefining?
-    private let timeoutProvider: @Sendable (String) -> TimeInterval
+    private let timeoutProvider: @Sendable (
+        String,
+        TimeInterval?
+    ) -> TimeInterval
+    private let failureReporter: (@Sendable (String, Error) -> Void)?
 
     init(
         qwen: TextRefining?,
         apple: TextRefining?,
-        timeoutProvider: @escaping @Sendable (String) -> TimeInterval = {
-            AppConfiguration.textRefinementTimeout(for: $0)
-        }
+        timeoutProvider: @escaping @Sendable (
+            String,
+            TimeInterval?
+        ) -> TimeInterval = { text, speechDuration in
+            AppConfiguration.textRefinementTimeout(
+                for: text,
+                speechDuration: speechDuration
+            )
+        },
+        failureReporter: (@Sendable (String, Error) -> Void)? = nil
     ) {
         self.qwen = qwen
         self.apple = apple
         self.timeoutProvider = timeoutProvider
+        self.failureReporter = failureReporter
     }
 
-    func refine(_ text: String) async throws -> TextRefinementResult {
+    func refine(
+        _ text: String,
+        context: TextRefinementContext
+    ) async throws -> TextRefinementResult {
         guard qwen != nil || apple != nil else {
             throw TextRefinementError.unavailable("没有可用的本地整理模型")
         }
@@ -1611,17 +1897,28 @@ final class ParallelTextRefiner: TextRefining, @unchecked Sendable {
 
         let qwenTask: Task<Void, Never>? = qwen.map { refiner in
             Task.detached {
-                let outcome = await Self.run(refiner, text: text)
+                let outcome = await Self.run(
+                    refiner,
+                    text: text,
+                    context: context
+                )
                 relay.yield(.qwen(outcome))
             }
         }
         let appleTask: Task<Void, Never>? = apple.map { refiner in
             Task.detached {
-                let outcome = await Self.run(refiner, text: text)
+                let outcome = await Self.run(
+                    refiner,
+                    text: text,
+                    context: context
+                )
                 relay.yield(.apple(outcome))
             }
         }
-        let timeout = max(0, timeoutProvider(text))
+        let timeout = max(
+            0,
+            timeoutProvider(text, context.speechDuration)
+        )
         let timeoutNanoseconds = UInt64(
             min(timeout, Double(UInt64.max) / 1_000_000_000)
                 * 1_000_000_000
@@ -1658,6 +1955,9 @@ final class ParallelTextRefiner: TextRefining, @unchecked Sendable {
                 if case let .success(value) = outcome {
                     return value
                 }
+                if case let .failure(error) = outcome {
+                    failureReporter?("Qwen", error)
+                }
                 if let appleOutcome,
                    case let .success(value) = appleOutcome {
                     return value
@@ -1672,6 +1972,9 @@ final class ParallelTextRefiner: TextRefining, @unchecked Sendable {
             case let .apple(outcome):
                 applePending = false
                 appleOutcome = outcome
+                if case let .failure(error) = outcome {
+                    failureReporter?("Apple", error)
+                }
                 if !qwenPending {
                     if case let .success(value) = outcome {
                         return value
@@ -1699,10 +2002,13 @@ final class ParallelTextRefiner: TextRefining, @unchecked Sendable {
 
     private static func run(
         _ refiner: TextRefining,
-        text: String
+        text: String,
+        context: TextRefinementContext
     ) async -> Result<TextRefinementResult, Error> {
         do {
-            return .success(try await refiner.refine(text))
+            return .success(
+                try await refiner.refine(text, context: context)
+            )
         } catch {
             return .failure(error)
         }

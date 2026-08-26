@@ -24,6 +24,15 @@ enum AudioRecorderError: LocalizedError {
 final class AudioRecorder {
     private let engine = AVAudioEngine()
     private var recordingFile: AVAudioFile?
+
+    static func duration(of audioURL: URL) -> TimeInterval? {
+        guard let file = try? AVAudioFile(forReading: audioURL),
+              file.processingFormat.sampleRate > 0
+        else {
+            return nil
+        }
+        return Double(file.length) / file.processingFormat.sampleRate
+    }
     private var nativeRecordingURL: URL?
     private var recordingError: Error?
     private var hasInstalledTap = false

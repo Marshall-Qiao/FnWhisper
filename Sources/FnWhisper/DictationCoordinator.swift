@@ -140,7 +140,10 @@ final class DictationCoordinator {
         phase = .transcribing
         let audioURL = try recorder.stop()
         let fileSize = (try? audioURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-        logger.notice("Audio recording stopped; wavBytes=\(fileSize, privacy: .public)")
+        let speechDuration = AudioRecorder.duration(of: audioURL)
+        logger.notice(
+            "Audio recording stopped; wavBytes=\(fileSize, privacy: .public); durationSeconds=\(speechDuration ?? 0, privacy: .public)"
+        )
         defer {
             try? FileManager.default.removeItem(at: audioURL)
         }
@@ -176,7 +179,12 @@ final class DictationCoordinator {
         transcription = TextTranscriptionNormalizer.normalize(transcription)
         if let textRefiner {
             do {
-                let result = try await textRefiner.refine(transcription)
+                let result = try await textRefiner.refine(
+                    transcription,
+                    context: TextRefinementContext(
+                        speechDuration: speechDuration
+                    )
+                )
                 transcription = result.text
                 textProcessing = .refined(
                     punctuationProcessor,

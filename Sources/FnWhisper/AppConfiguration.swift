@@ -7,22 +7,39 @@ struct AppConfiguration {
     static let defaultPunctuationModelDirectory =
         "sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8"
     static let minimumTextRefinementTimeout: TimeInterval = 3
-    static let maximumTextRefinementTimeout: TimeInterval = 5
+    static let maximumTextRefinementTimeout: TimeInterval = 10
 
-    static func textRefinementTimeout(for text: String) -> TimeInterval {
+    static func textRefinementTimeout(
+        for text: String,
+        speechDuration: TimeInterval? = nil
+    ) -> TimeInterval {
         let characterCount = text.reduce(into: 0) { count, character in
             if !character.isWhitespace {
                 count += 1
             }
         }
+        let textBasedTimeout: TimeInterval
         switch characterCount {
         case ...12:
-            return minimumTextRefinementTimeout
+            textBasedTimeout = minimumTextRefinementTimeout
         case ...80:
-            return 4
+            textBasedTimeout = 4
         default:
-            return maximumTextRefinementTimeout
+            textBasedTimeout = 5
         }
+        guard let speechDuration,
+              speechDuration.isFinite,
+              speechDuration > 0
+        else {
+            return textBasedTimeout
+        }
+        let durationBasedTimeout = ceil(
+            (minimumTextRefinementTimeout + speechDuration * 0.35) * 2
+        ) / 2
+        return min(
+            maximumTextRefinementTimeout,
+            max(textBasedTimeout, durationBasedTimeout)
+        )
     }
 
     static let applicationSupportDirectory: URL = {
