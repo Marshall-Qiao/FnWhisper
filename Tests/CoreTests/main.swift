@@ -380,7 +380,8 @@ private func testParallelTextRefinerRacing() async {
                 output: "apple",
                 shouldFail: false
             ),
-            timeoutProvider: { _, _ in 0.1 }
+            timeoutProvider: { _, _ in 0.1 },
+            fallbackDelay: 0
         )
         let result = try await refiner.refine("test")
         expect(
@@ -405,7 +406,8 @@ private func testParallelTextRefinerRacing() async {
                 output: "apple",
                 shouldFail: false
             ),
-            timeoutProvider: { _, _ in 0.1 }
+            timeoutProvider: { _, _ in 0.1 },
+            fallbackDelay: 0
         )
         let result = try await refiner.refine("test")
         expect(
@@ -426,7 +428,10 @@ private func testParallelTextRefinerRacing() async {
                 output: "apple",
                 shouldFail: false
             ),
-            timeoutProvider: { _, _ in 0.03 }
+            // This case tests a cached fallback at the deadline, not the
+            // production hedge delay. Leave room for CI task scheduling.
+            timeoutProvider: { _, _ in 0.2 },
+            fallbackDelay: 0
         )
         defer { qwen.release() }
         let result = try await refiner.refine("test")
@@ -444,7 +449,8 @@ private func testParallelTextRefinerRacing() async {
         let refiner = ParallelTextRefiner(
             qwen: qwen,
             apple: apple,
-            timeoutProvider: { _, _ in 0.03 }
+            timeoutProvider: { _, _ in 0.03 },
+            fallbackDelay: 0
         )
         let safetyRelease = Task.detached {
             try? await Task.sleep(nanoseconds: 500_000_000)
@@ -481,7 +487,8 @@ private func testParallelTextRefinerRacing() async {
                 shouldFail: false
             ),
             apple: apple,
-            timeoutProvider: { _, _ in 0.2 }
+            timeoutProvider: { _, _ in 0.2 },
+            fallbackDelay: 0
         )
         let safetyRelease = Task.detached {
             try? await Task.sleep(nanoseconds: 500_000_000)
@@ -519,7 +526,8 @@ private func testParallelTextRefinerRacing() async {
             ),
             timeoutProvider: { _, speechDuration in
                 speechDuration == 10 ? 0.15 : 0.02
-            }
+            },
+            fallbackDelay: 0
         )
         let result = try await refiner.refine(
             "test",
