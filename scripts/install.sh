@@ -8,6 +8,10 @@ INSTALL_ROOT="${FNWHISPER_INSTALL_DIR:-${HOME}/Applications}"
 INSTALLED_APP="$INSTALL_ROOT/FnWhisper.app"
 
 "$PROJECT_DIR/scripts/build-app.sh"
+if ! "$SOURCE_APP/Contents/MacOS/FnWhisper" --check-runtime; then
+    print -u2 "运行依赖或模型未就绪，旧版本保持不变。新机器请先运行 scripts/bootstrap-machine.sh。"
+    exit 1
+fi
 mkdir -p "$INSTALL_ROOT"
 
 typeset -a APP_PIDS=()

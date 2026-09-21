@@ -1,0 +1,64 @@
+[
+  {
+    "id": "zh-list",
+    "voice": "Tingting",
+    "text": "第一，备份数据库。第二，检查接口。第三，更新文档。"
+  },
+  {
+    "id": "zh-condition",
+    "voice": "Tingting",
+    "text": "第一，检查登录，如果失败就回滚。第二，补充测试，不要直接发布。"
+  },
+  {
+    "id": "zh-correction",
+    "voice": "Tingting",
+    "text": "明天下午三点开会，不对，改成四点，地点还是原来的会议室。"
+  },
+  {
+    "id": "zh-decimal",
+    "voice": "Tingting",
+    "text": "版本从三点五升级到三点六，预算是一千五百加元，不能超过两千。"
+  },
+  {
+    "id": "zh-narrative",
+    "voice": "Tingting",
+    "text": "我今天先去超市买菜，然后回家做饭，最后和朋友一起看电影。"
+  },
+  {
+    "id": "mixed",
+    "voice": "Tingting",
+    "text": "第一，检查 API 的错误日志。第二，更新 README。第三，修复 login 页面。"
+  },
+  {
+    "id": "en-list",
+    "voice": "Samantha",
+    "text": "First, back up the database. Second, run the tests. Third, notify the team."
+  },
+  {
+    "id": "en-negative",
+    "voice": "Samantha",
+    "text": "Do not restart the server until the backup finishes. Email Alice, not Bob."
+  },
+  {
+    "id": "en-correction",
+    "voice": "Samantha",
+    "text": "Schedule the meeting for Friday, no, I mean Monday. Keep the original room."
+  },
+  {
+    "id": "en-nouns",
+    "voice": "Samantha",
+    "text": "This was my first visit to Toronto, and my second cup of coffee that morning."
+  },
+  {
+    "id": "holdout-zh",
+    "voice": "Tingting",
+    "text": "第一，确认酒店地址，如果前台没有回复就打电话。第二，预约去机场的车。第三，把电子机票发给家人。",
+    "holdout": true
+  },
+  {
+    "id": "holdout-en",
+    "voice": "Samantha",
+    "text": "First, review the invoice and confirm the total. Second, renew the certificate before it expires. Third, call the supplier if the delivery is late.",
+    "holdout": true
+  }
+]

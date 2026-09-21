@@ -1,6 +1,33 @@
 import AppKit
 import Foundation
 
+// Dependency readiness is separate from user-granted macOS permissions.
+// The installer runs this before stopping/replacing a working installation.
+if CommandLine.arguments.contains("--check-runtime") {
+    let configuration = AppConfiguration()
+    let dependencies: [(String, URL?)] = [
+        ("whisper-cli", configuration.resolveWhisperCLI()),
+        ("whisper-server", configuration.resolveWhisperServer()),
+        ("llama-server", configuration.resolveLlamaServer()),
+        ("Whisper 模型", configuration.modelURL),
+        ("CT-Punc 模型", configuration.punctuationModelURL),
+        ("Qwen 模型", configuration.textModelURL),
+    ]
+    let missing = dependencies.filter { _, url in
+        guard let url,
+              let values = try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+        else { return true }
+        return values.isRegularFile != true || (values.fileSize ?? 0) == 0
+    }
+    for (name, url) in missing {
+        print("未就绪：\(name) — \(url?.path ?? "未找到可执行文件")")
+    }
+    if missing.isEmpty {
+        print("运行依赖和模型文件已就绪；首次使用仍需授予系统权限。")
+    }
+    exit(missing.isEmpty ? 0 : 2)
+}
+
 if CommandLine.arguments.contains("--diagnose") {
     let configuration = AppConfiguration()
     print(PermissionManager.diagnosticReport)

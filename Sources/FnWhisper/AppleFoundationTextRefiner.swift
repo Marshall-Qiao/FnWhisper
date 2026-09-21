@@ -59,7 +59,7 @@ final class AppleFoundationTextRefiner: TextRefining, @unchecked Sendable {
             ),
             options: GenerationOptions(
                 sampling: .greedy,
-                maximumResponseTokens: 192
+                maximumResponseTokens: AppConfiguration.textRefinementTokenBudget(for: input.source)
             )
         )
         guard let data = response.content.jsonString.data(using: .utf8),
@@ -95,8 +95,8 @@ final class AppleFoundationTextRefiner: TextRefining, @unchecked Sendable {
         let items = DynamicGenerationSchema(
             arrayOf: text,
             minimumElements: isList ? max(2, expectedItemCount) : 1,
-            maximumElements: requiredFormat == .paragraph
-                ? 1 : (expectedItemCount >= 2 ? expectedItemCount : 8)
+            maximumElements: input.permitsList
+                ? (expectedItemCount >= 2 ? expectedItemCount : 8) : 1
         )
         let root = DynamicGenerationSchema(
             name: "RefinedText",

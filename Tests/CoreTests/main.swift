@@ -203,7 +203,7 @@ private func testDictationProcessingRoute() {
     )
     expect(qwenRoute.indicatorText == "Ⓠ", "Qwen 应显示简短的 Q 标记")
     expect(
-        qwenRoute.completionText == "最终由 Qwen3-4B 本地模型整理",
+        qwenRoute.completionText == "最终由 Qwen 本地模型整理",
         "Qwen 完成提示应同时说明最终文字来源"
     )
 
@@ -326,7 +326,46 @@ private final class GatedTextRefiner: TextRefining, @unchecked Sendable {
     }
 }
 
+private final class CountingTextRefiner: TextRefining, @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    var callCount: Int { lock.lock(); defer { lock.unlock() }; return calls }
+    private func recordCall() { lock.lock(); calls += 1; lock.unlock() }
+    func refine(_ text: String, context: TextRefinementContext) async throws -> TextRefinementResult {
+        recordCall()
+        return TextRefinementResult(text: text, provider: .apple)
+    }
+}
+
 private func testParallelTextRefinerRacing() async {
+    do {
+        let apple = CountingTextRefiner()
+        let refiner = ParallelTextRefiner(
+            qwen: DelayedTextRefiner(delayNanoseconds: 1_000_000, provider: .qwen, output: "qwen", shouldFail: false),
+            apple: apple, timeoutProvider: { _, _ in 0.2 }, fallbackDelay: 0.1
+        )
+        let result = try await refiner.refine("test")
+        try await Task.sleep(nanoseconds: 80_000_000)
+        expect(result.provider == .qwen && apple.callCount == 0, "Qwen 在延迟内成功时不得启动 Apple 推理")
+    } catch { expect(false, "延迟回退快速路径失败：\(error)") }
+    do {
+        let apple = CountingTextRefiner()
+        let refiner = ParallelTextRefiner(
+            qwen: DelayedTextRefiner(delayNanoseconds: 1_000_000, provider: .qwen, output: "unused", shouldFail: true),
+            apple: apple, timeoutProvider: { _, _ in 0.2 }, fallbackDelay: 0.1
+        )
+        let started = Date()
+        let result = try await refiner.refine("test")
+        expect(result.provider == .apple && apple.callCount == 1, "Qwen 失败必须立即启动且只调用一次 Apple")
+        expect(Date().timeIntervalSince(started) < 0.045, "已知失败不应继续等待延迟计时器")
+    } catch { expect(false, "立即回退路径失败：\(error)") }
+    do {
+        let apple = CountingTextRefiner()
+        let refiner = ParallelTextRefiner(qwen: nil, apple: apple)
+        let result = try await refiner.refine("test")
+        expect(result.provider == .apple && apple.callCount == 1, "没有 Qwen 时 Apple 应立即可用")
+    } catch { expect(false, "Apple 单独可用时不应失败：\(error)") }
+
     do {
         let refiner = ParallelTextRefiner(
             qwen: DelayedTextRefiner(
@@ -1438,6 +1477,184 @@ private func testTextRefinementValidation() {
     }
 }
 
+
+private func testListLayoutRegressions() {
+    for source in ["不要超过这个金额", "余额", "额度保持不变", "额外检查日志"] {
+        expect(TextTranscriptionNormalizer.normalize(source) == source,
+               "不能把金额、额度里的额当作填充词删除：\(source)")
+    }
+    expect(TextTranscriptionNormalizer.normalize("额，检查金额") == "检查金额",
+           "有明确分隔的额仍可作为填充词清理")
+    do {
+        let items = ["first check logs", "second run tests", "third notify Alice", "fourth update docs"]
+        let source = items.joined(separator: "; ")
+        let result = try TextRefinementValidator.validateAndRender(
+            TextRefinementPayload(items: items), source: source, requiredFormat: .numberedList
+        )
+        expect(result == "1. check logs\n2. run tests\n3. notify Alice\n4. update docs",
+               "英文列表第三、第四项也必须清理口述序号")
+    } catch { expect(false, "英文四项列表不应失败：\(error)") }
+    expect(TextLayoutHeuristics.explicitOrdinalCount(in:
+        "first check logs; second run tests; third notify Alice; fourth update docs; fifth check health; sixth inspect output; seventh collect feedback; eighth close tickets"
+    ) == 8, "英文枚举应与最多8项的生成约束一致")
+    let ordinaryText = [
+        "明天下午3点开会，讨论上线计划。",
+        "明天有3点会议，记得参加。",
+        "升级到3.5版本，完成后观察。",
+        "This is my first visit and my second coffee.",
+        "This is my first run and my second review.",
+        "Compare first-class tickets and second-class tickets.",
+        "我下班去超市，然后回家做饭，然后打开电视休息。",
+    ]
+    for text in ordinaryText {
+        let input = TextRefinementInput.prepare(text)
+        expect(input.requiredFormat != .numberedList, "普通时间或叙述不能强制分项：\(text)")
+        expect(TextLayoutHeuristics.declaredItemCount(in: input.source) == nil,
+               "普通数字不能约束列表项数：\(text)")
+        expect(!TextLayoutHeuristics.allowsAutomaticList(input.source),
+               "普通叙述不能仅因逗号或然后而允许列表：\(text)")
+    }
+
+    let paragraphDirectives: [(String, String)] = [
+        ("先测试，然后发布，不要整理成数字列表。", "先测试，然后发布"),
+        ("第一检查日志，第二修复问题，不要分点，保持一段。", "第一检查日志，第二修复问题"),
+        ("第一确认收货，第二核对发票，不要列清单，写成一段。", "第一确认收货，第二核对发票"),
+        ("先测试，然后发布，请不要按数字列表输出。", "先测试，然后发布"),
+        ("First run tests second update docs, do not format as a numbered list.",
+         "First run tests second update docs"),
+        ("First run tests second update docs, please don't use a numbered list.",
+         "First run tests second update docs"),
+        ("第一检查日志，第二修复问题，keep it as one paragraph.", "第一检查日志，第二修复问题"),
+    ]
+    for (text, expectedSource) in paragraphDirectives {
+        let input = TextRefinementInput.prepare(text)
+        expect(input.requiredFormat == .paragraph, "明确拒绝分点必须优先：\(text)")
+        expect(input.source == expectedSource, "格式要求应完整移除，不能留下不要或请：\(input.source)")
+        do {
+            let result = try TextRefinementValidator.validateAndRender(
+                TextRefinementPayload(items: [expectedSource]),
+                source: input.source,
+                requiredFormat: input.requiredFormat
+            )
+            expect(result == expectedSource, "段落要求必须覆盖原文枚举信号")
+        } catch {
+            expect(false, "保留枚举词的自然段落不应被项数检查拒绝：\(error)")
+        }
+    }
+
+    for text in [
+        "他说整理成数字列表",
+        "他说“整理成数字列表”",
+        "他说“不要分点”，然后继续说明",
+        "He said \"format as a numbered list\".",
+    ] {
+        expect(TextFormatDirectiveParser.parse(text).source == text,
+               "引用或转述的格式要求不能剥离：\(text)")
+    }
+
+    for text in [
+        "第一运行测试，第二更新文档",
+        "first run the tests second update the docs third send the result",
+        "first migrate the database second inspect the output",
+        "First, test; second, deploy; third, report.",
+        "我有三件事：测试，发布，通知团队",
+        "I have three tasks: test, deploy, and report.",
+        "先测试，然后发布，请按数字列表输出",
+    ] {
+        expect(TextRefinementInput.prepare(text).requiredFormat == .numberedList,
+               "明确枚举和肯定格式要求应保留：\(text)")
+    }
+
+    let accepted: [(String, TextRefinementPayload, String)] = [
+        (
+            "I have three tasks: run tests, update docs, notify the team.",
+            TextRefinementPayload(items: ["run tests", "update docs", "notify the team"]),
+            "I have three tasks:\n\n1. run tests\n2. update docs\n3. notify the team"
+        ),
+        (
+            "我有3件事：修登录，如果失败就回滚，补测试，更新文档。",
+            TextRefinementPayload(items: ["修登录，如果失败就回滚", "补测试", "更新文档"]),
+            "我有3件事：\n\n1. 修登录，如果失败就回滚\n2. 补测试\n3. 更新文档"
+        ),
+        (
+            "我有2件事：更新文档，升级到3.5版本。",
+            TextRefinementPayload(items: ["更新文档", "升级到3.5版本"]),
+            "我有2件事：\n\n1. 更新文档\n2. 升级到3.5版本"
+        ),
+        (
+            "我有2件事：更新文档，检查 example.com。完成后通知团队。",
+            TextRefinementPayload(items: ["更新文档", "检查 example.com"], tail: "完成后通知团队。"),
+            "我有2件事：\n\n1. 更新文档\n2. 检查 example.com\n\n完成后通知团队。"
+        ),
+        (
+            "第一备份数据库，第二执行迁移，第三验证结果。",
+            TextRefinementPayload(items: ["备份数据库", "执行迁移", "验证结果"]),
+            "1. 备份数据库\n2. 执行迁移\n3. 验证结果"
+        ),
+        (
+            "first run tests, if they fail fix them; second update docs and notify the team",
+            TextRefinementPayload(items: ["run tests, if they fail fix them", "update docs and notify the team"]),
+            "1. run tests, if they fail fix them\n2. update docs and notify the team"
+        ),
+        (
+            "第一用 Qwen 检查 API，失败就回滚，第二更新 README 并通知团队。",
+            TextRefinementPayload(items: ["用 Qwen 检查 API，失败就回滚", "更新 README 并通知团队"]),
+            "1. 用 Qwen 检查 API，失败就回滚\n2. 更新 README 并通知团队"
+        ),
+        (
+            "第一会议改到3点，不对，是4点，第二更新文档。",
+            TextRefinementPayload(items: ["会议改到4点", "更新文档"]),
+            "1. 会议改到4点\n2. 更新文档"
+        ),
+    ]
+    for (text, payload, expected) in accepted {
+        let input = TextRefinementInput.prepare(text)
+        do {
+            let result = try TextRefinementValidator.validateAndRender(
+                payload, source: input.source, requiredFormat: input.requiredFormat
+            )
+            expect(result == expected, "正确分项必须保持边界、条件、数字和顺序：\(result)")
+        } catch {
+            expect(false, "正确分项不应被后处理破坏：\(text)；\(error)")
+        }
+    }
+
+    let rejected: [(String, [String])] = [
+        ("第一备份数据库，第二执行迁移，第三验证结果。", ["验证结果", "执行迁移", "备份数据库"]),
+        ("我有3件事：备份数据库，执行迁移，验证结果。", ["验证结果", "执行迁移", "备份数据库"]),
+        ("first run tests second update docs third notify the team", ["notify the team", "update docs", "run tests"]),
+        ("第一检查登录接口是否正常，第二补齐支付模块的回归测试，第三更新部署文档并通知团队。",
+         ["检查登录接口是否正常", "补齐支付模块的回归测试", "更新部署文档"]),
+        ("first run tests second update docs and notify the team", ["run tests", "update docs"]),
+        ("第一修登录，如果失败就回滚，第二补测试，第三更新文档。",
+         ["修登录", "如果失败就回滚", "补测试，更新文档"]),
+        ("我有3件事：修登录，补测试，更新文档。", ["修登录，补测试", "更新文档"]),
+        ("我有2件事：更新文档，升级到3.5版本。", ["更新文档", "", "升级到3.5版本"]),
+        ("我有2件事：更新文档，升级到3.5版本。", ["更新文档，升级到3.5版本", "。"]),
+        ("我下班去超市，然后回家做饭，然后打开电视休息。", ["我下班去超市", "回家做饭", "打开电视休息"]),
+    ]
+    for (text, items) in rejected {
+        let input = TextRefinementInput.prepare(text)
+        do {
+            _ = try TextRefinementValidator.validateAndRender(
+                TextRefinementPayload(items: items),
+                source: input.source,
+                requiredFormat: input.requiredFormat
+            )
+            expect(false, "错误分项、遗漏或颠倒顺序应拒绝：\(text)")
+        } catch let error as TextRefinementError {
+            switch error {
+            case .semanticMismatch, .invalidResponse:
+                break
+            default:
+                expect(false, "应由结构或语义校验拒绝：\(error)")
+            }
+        } catch {
+            expect(false, "发生非预期校验错误：\(error)")
+        }
+    }
+}
+
 private func testQwenServerProtocol() {
     let endpoint = QwenServerEndpoint(port: 54_321)
     let arguments = QwenServerProtocol.launchArguments(
@@ -1460,6 +1677,11 @@ private func testQwenServerProtocol() {
         let object = try JSONSerialization.jsonObject(with: data)
             as? [String: Any]
         let template = object?["chat_template_kwargs"] as? [String: Any]
+        expect(object?["max_tokens"] as? Int == 192, "短句应保留小输出预算")
+        let longBody = try QwenServerProtocol.requestBody(text: String(repeating: "检查日志并保留所有条件。", count: 40))
+        let longObject = try JSONSerialization.jsonObject(with: longBody) as? [String: Any]
+        expect((longObject?["max_tokens"] as? Int ?? 0) > 192, "长文本不能继续固定为192 tokens")
+        expect((longObject?["max_tokens"] as? Int ?? 0) <= 1024, "长文本预算仍须有上限")
         expect(
             template?["enable_thinking"] as? Bool == false,
             "每次请求都必须显式关闭 Qwen thinking"
@@ -1473,11 +1695,14 @@ private func testQwenServerProtocol() {
         let schema = jsonSchema?["schema"] as? [String: Any]
         let properties = schema?["properties"] as? [String: Any]
         let paragraphItems = properties?["items"] as? [String: Any]
+        let itemSchema = paragraphItems?["items"] as? [String: Any]
+        expect(itemSchema?["minLength"] as? Int == 1,
+               "生成约束必须禁止空字符串凑列表项数")
         expect(
             paragraphItems?["minItems"] as? Int == 1
-                && paragraphItems?["maxItems"] as? Int == 8
+                && paragraphItems?["maxItems"] as? Int == 1
                 && properties?.count == 3,
-            "自动布局 schema 应允许一个段落或 2–8 个并列事项"
+            "无并列证据时 schema 应与校验器一致，只允许一个段落"
         )
 
         let forcedData = try QwenServerProtocol.requestBody(
@@ -1496,6 +1721,14 @@ private func testQwenServerProtocol() {
                 && forcedProperties?.count == 3,
             "数字列表 schema 应允许 lead、2–8 个 items 和 tail"
         )
+        let paragraphData = try QwenServerProtocol.requestBody(text: "第一检查日志，第二修复问题，不要分点，保持一段。")
+        let paragraphBody = try JSONSerialization.jsonObject(with: paragraphData) as! [String: Any]
+        let paragraphFormat = paragraphBody["response_format"] as! [String: Any]
+        let paragraphSchema = (paragraphFormat["json_schema"] as! [String: Any])["schema"] as! [String: Any]
+        let paragraphProperties = paragraphSchema["properties"] as! [String: Any]
+        expect((paragraphProperties["lead"] as? [String: Any])?["const"] as? String == ""
+               && (paragraphProperties["tail"] as? [String: Any])?["const"] as? String == "",
+               "强制段落时 schema 应禁止模型把正文分散到 lead/tail")
     } catch {
         expect(false, "Qwen 请求结构应可序列化：\(error)")
     }
@@ -1512,6 +1745,20 @@ private func testQwenServerProtocol() {
     } catch {
         expect(false, "合法 Qwen 响应不应解析失败：\(error)")
     }
+    do {
+        _ = try QwenServerProtocol.parseResponse(
+            data: Data(#"{"choices":[{"finish_reason":"length","message":{"content":"{}"}}]}"#.utf8),
+            statusCode: 200
+        )
+        expect(false, "达到输出上限的响应必须显式失败，不能接受截断内容")
+    } catch TextRefinementError.invalidResponse { }
+    catch { expect(false, "输出截断应报告 invalidResponse：\(error)") }
+
+    let isolatedDefaults = UserDefaults(suiteName: "FnWhisper-tests-\(UUID().uuidString)")!
+    let custom = AppConfiguration(environment: ["FNWHISPER_APP_SUPPORT_DIR": "/tmp/fnwhisper-custom"], defaults: isolatedDefaults)
+    expect(custom.modelURL.path.hasPrefix("/tmp/fnwhisper-custom/Models/"), "自定义安装目录必须作用于 Whisper")
+    expect(custom.textModelURL.path.hasPrefix("/tmp/fnwhisper-custom/Models/"), "自定义安装目录必须作用于 Qwen")
+    expect(custom.punctuationModelURL.path.hasPrefix("/tmp/fnwhisper-custom/Models/"), "自定义安装目录必须作用于标点模型")
 }
 
 private func testLanguageNormalization() {
@@ -1537,7 +1784,7 @@ private func testLanguageNormalization() {
     )
     expect(
         AppConfiguration.defaultModelFilename
-            == "ggml-large-v3-q5_0.bin",
+            == "ggml-large-v3-turbo-q5_0.bin",
         "默认模型应为 large-v3-q5_0"
     )
     expect(
@@ -1548,7 +1795,7 @@ private func testLanguageNormalization() {
     )
     expect(
         AppConfiguration.defaultTextModelFilename
-            == "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+            == "Qwen3.5-4B-Q4_K_M.gguf",
         "默认文字整理模型应为 Qwen3-4B-Instruct-2507 Q4_K_M"
     )
     expect(
@@ -1803,6 +2050,7 @@ testBilingualOutputPolicy()
 testDictationProcessingRoute()
 runAsyncCoreTests()
 testTextRefinementValidation()
+testListLayoutRegressions()
 testLanguageNormalization()
 testWhisperCommandArguments()
 testWhisperServerProtocol()

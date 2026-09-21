@@ -1,0 +1,64 @@
+{"apple_calls":1,"delay":0,"id":"travel-three","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"我有3件事：\n\n1. 确认酒店地址\n2. 打印登机牌\n3. 预约去机场的车","seconds":0.77980697154998779}
+{"apple_calls":1,"delay":0,"id":"doctor-time","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"明天下午4点去医院复查，回来以后再给妈妈打电话。","seconds":1.1295250654220581}
+{"apple_calls":1,"delay":0,"id":"shopping-conditions","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 买无糖酸奶，如果没有就买牛奶\n2. 买全麦面包，不要买含花生的。","seconds":1.1424859762191772}
+{"apple_calls":1,"delay":0,"id":"english-new-actions","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. inspect the invoice\n2. archive the receipt\n3. contact the supplier","seconds":0.88289093971252441}
+{"apple_calls":1,"delay":0,"id":"english-ordinary","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"Our first apartment was small, and the second bedroom had no window.","seconds":0.78513705730438232}
+{"apple_calls":1,"delay":0,"id":"new-bilingual","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 检查 Stripe webhook，不要重复扣款\n2. 在 Notion 更新 meeting notes","seconds":1.0013949871063232}
+{"apple_calls":1,"delay":0,"id":"new-correction","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 预约周四\n2. 通知负责接待的同事","seconds":0.76268291473388672}
+{"apple_calls":1,"delay":0,"id":"new-negative","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"第一确认收货，第二核对发票","seconds":1.0309420824050903}
+{"apple_calls":1,"delay":0,"id":"new-states","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 【待处理】客户退款\n2. 【已改】地址错误\n3. [TODO]上传凭证","seconds":1.033452033996582}
+{"apple_calls":1,"delay":0,"id":"new-percentage","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 检查7.25%的税率\n2. 把预算改为1500加元，不要超过这个金额","seconds":1.1144670248031616}
+{"apple_calls":1,"delay":0,"id":"new-english-condition","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. email Jane after she approves the draft\n2. call Sam only if the shipment is late","seconds":0.95103394985198975}
+{"apple_calls":1,"delay":0,"id":"new-narrative","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"因为今天下雨，我先在家整理资料，然后开了视频会议，最后才出门。","seconds":1.2446099519729614}
+{"apple_calls":1,"delay":0,"id":"new-count-english","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"I have two tasks:\n\n1. renew the certificate\n2. rotate the test credentials","seconds":0.76104903221130371}
+{"apple_calls":1,"delay":0,"id":"new-reported","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"客户说“不要列清单”，这句话只是反馈记录。","seconds":1.1462199687957764}
+{"apple_calls":1,"delay":0,"id":"new-priority","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 先处理普通工单\n2. 再处理紧急工单，按照我刚才说的顺序","seconds":1.0339349508285522}
+{"apple_calls":1,"delay":0,"id":"new-path","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 保留 \/Users\/demo\/notes.txt\n2. 检查 https:\/\/example.org\/api\/v2，不要改地址。","seconds":1.1308499574661255}
+{"apple_calls":0,"delay":1.5,"id":"travel-three","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"我有3件事：\n\n1. 确认酒店地址\n2. 打印登机牌\n3. 预约去机场的车","seconds":0.78681695461273193}
+{"apple_calls":0,"delay":1.5,"id":"doctor-time","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"明天下午4点去医院复查，回来以后再给妈妈打电话。","seconds":1.1064109802246094}
+{"apple_calls":0,"delay":1.5,"id":"shopping-conditions","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 买无糖酸奶，如果没有就买牛奶\n2. 买全麦面包，不要买含花生的。","seconds":1.0039340257644653}
+{"apple_calls":0,"delay":1.5,"id":"english-new-actions","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. inspect the invoice\n2. archive the receipt\n3. contact the supplier","seconds":0.83565497398376465}
+{"apple_calls":0,"delay":1.5,"id":"english-ordinary","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"Our first apartment was small, and the second bedroom had no window.","seconds":0.77388310432434082}
+{"apple_calls":0,"delay":1.5,"id":"new-bilingual","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 检查 Stripe webhook，不要重复扣款\n2. 在 Notion 更新 meeting notes","seconds":0.90689599514007568}
+{"apple_calls":0,"delay":1.5,"id":"new-correction","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 预约周四\n2. 通知负责接待的同事","seconds":0.75631499290466309}
+{"apple_calls":0,"delay":1.5,"id":"new-negative","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"第一确认收货，第二核对发票","seconds":0.99323999881744385}
+{"apple_calls":0,"delay":1.5,"id":"new-states","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 【待处理】客户退款\n2. 【已改】地址错误\n3. [TODO]上传凭证","seconds":1.0164749622344971}
+{"apple_calls":0,"delay":1.5,"id":"new-percentage","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 检查7.25%的税率\n2. 把预算改为1500加元，不要超过这个金额","seconds":1.073976993560791}
+{"apple_calls":0,"delay":1.5,"id":"new-english-condition","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. email Jane after she approves the draft\n2. call Sam only if the shipment is late","seconds":0.99346303939819336}
+{"apple_calls":0,"delay":1.5,"id":"new-narrative","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"因为今天下雨，我先在家整理资料，然后开了视频会议，最后才出门。","seconds":1.1837539672851562}
+{"apple_calls":0,"delay":1.5,"id":"new-count-english","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"I have two tasks:\n\n1. renew the certificate\n2. rotate the test credentials","seconds":0.71552193164825439}
+{"apple_calls":0,"delay":1.5,"id":"new-reported","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"客户说“不要列清单”，这句话只是反馈记录。","seconds":1.1075440645217896}
+{"apple_calls":1,"delay":1.5,"error":"unavailable(\"Qwen：文字整理结果改变了原意：第2项遗漏内容或改变了事项对应关系；Apple：文字整理结果改变了原意：第2项遗漏内容或改变了事项对应关系\")","id":"new-priority","qwen_calls":1,"seconds":2.5814939737319946}
+{"apple_calls":0,"delay":1.5,"id":"new-path","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 保留 \/Users\/demo\/notes.txt\n2. 检查 https:\/\/example.org\/api\/v2，不要改地址。","seconds":1.0310660600662231}
+{"apple_calls":0,"delay":1.5,"id":"travel-three","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"我有3件事：\n\n1. 确认酒店地址\n2. 打印登机牌\n3. 预约去机场的车","seconds":0.77075505256652832}
+{"apple_calls":0,"delay":1.5,"id":"doctor-time","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"明天下午4点去医院复查，回来以后再给妈妈打电话。","seconds":1.0925630331039429}
+{"apple_calls":0,"delay":1.5,"id":"shopping-conditions","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 买无糖酸奶，如果没有就买牛奶\n2. 买全麦面包，不要买含花生的。","seconds":1.0065970420837402}
+{"apple_calls":0,"delay":1.5,"id":"english-new-actions","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. inspect the invoice\n2. archive the receipt\n3. contact the supplier","seconds":0.82659101486206055}
+{"apple_calls":0,"delay":1.5,"id":"english-ordinary","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"Our first apartment was small, and the second bedroom had no window.","seconds":0.87641298770904541}
+{"apple_calls":0,"delay":1.5,"id":"new-bilingual","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 检查 Stripe webhook，不要重复扣款\n2. 在 Notion 更新 meeting notes","seconds":0.89427399635314941}
+{"apple_calls":0,"delay":1.5,"id":"new-correction","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 预约周四\n2. 通知负责接待的同事","seconds":0.74653995037078857}
+{"apple_calls":0,"delay":1.5,"id":"new-negative","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"第一确认收货，第二核对发票","seconds":0.9889519214630127}
+{"apple_calls":0,"delay":1.5,"id":"new-states","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 【待处理】客户退款\n2. 【已改】地址错误\n3. [TODO]上传凭证","seconds":1.0478509664535522}
+{"apple_calls":0,"delay":1.5,"id":"new-percentage","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 检查7.25%的税率\n2. 把预算改为1500加元，不要超过这个金额","seconds":1.032505989074707}
+{"apple_calls":0,"delay":1.5,"id":"new-english-condition","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. email Jane after she approves the draft\n2. call Sam only if the shipment is late","seconds":0.9232180118560791}
+{"apple_calls":0,"delay":1.5,"id":"new-narrative","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"因为今天下雨，我先在家整理资料，然后开了视频会议，最后才出门。","seconds":1.2244009971618652}
+{"apple_calls":0,"delay":1.5,"id":"new-count-english","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"I have two tasks:\n\n1. renew the certificate\n2. rotate the test credentials","seconds":0.73854303359985352}
+{"apple_calls":0,"delay":1.5,"id":"new-reported","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"客户说“不要列清单”，这句话只是反馈记录。","seconds":1.1001800298690796}
+{"apple_calls":1,"delay":1.5,"error":"unavailable(\"Qwen：文字整理结果改变了原意：第2项遗漏内容或改变了事项对应关系；Apple：文字整理结果改变了原意：第2项遗漏内容或改变了事项对应关系\")","id":"new-priority","qwen_calls":1,"seconds":2.45176100730896}
+{"apple_calls":0,"delay":1.5,"id":"new-path","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 保留 \/Users\/demo\/notes.txt\n2. 检查 https:\/\/example.org\/api\/v2，不要改地址。","seconds":1.0291290283203125}
+{"apple_calls":1,"delay":0,"id":"travel-three","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"我有3件事：\n\n1. 确认酒店地址\n2. 打印登机牌\n3. 预约去机场的车","seconds":0.88183605670928955}
+{"apple_calls":1,"delay":0,"id":"doctor-time","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"明天下午4点去医院复查，回来以后再给妈妈打电话。","seconds":1.1925230026245117}
+{"apple_calls":1,"delay":0,"id":"shopping-conditions","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 买无糖酸奶，如果没有就买牛奶\n2. 买全麦面包，不要买含花生的。","seconds":1.1322540044784546}
+{"apple_calls":1,"delay":0,"id":"english-new-actions","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. inspect the invoice\n2. archive the receipt\n3. contact the supplier","seconds":0.86759305000305176}
+{"apple_calls":1,"delay":0,"id":"english-ordinary","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"Our first apartment was small, and the second bedroom had no window.","seconds":0.77975702285766602}
+{"apple_calls":1,"delay":0,"id":"new-bilingual","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 检查 Stripe webhook，不要重复扣款\n2. 在 Notion 更新 meeting notes","seconds":1.0299990177154541}
+{"apple_calls":1,"delay":0,"id":"new-correction","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 预约周四\n2. 通知负责接待的同事","seconds":0.8208770751953125}
+{"apple_calls":1,"delay":0,"id":"new-negative","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"第一确认收货，第二核对发票","seconds":1.0565780401229858}
+{"apple_calls":1,"delay":0,"id":"new-states","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 【待处理】客户退款\n2. 【已改】地址错误\n3. [TODO]上传凭证","seconds":1.0392149686813354}
+{"apple_calls":1,"delay":0,"id":"new-percentage","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 检查7.25%的税率\n2. 把预算改为1500加元，不要超过这个金额","seconds":1.099450945854187}
+{"apple_calls":1,"delay":0,"id":"new-english-condition","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. email Jane after she approves the draft\n2. call Sam only if the shipment is late","seconds":0.93654990196228027}
+{"apple_calls":1,"delay":0,"id":"new-narrative","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"因为今天下雨，我先在家整理资料，然后开了视频会议，最后才出门。","seconds":1.2367790937423706}
+{"apple_calls":1,"delay":0,"id":"new-count-english","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"I have two tasks:\n\n1. renew the certificate\n2. rotate the test credentials","seconds":0.81138503551483154}
+{"apple_calls":1,"delay":0,"id":"new-reported","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"客户说“不要列清单”，这句话只是反馈记录。","seconds":1.1594350337982178}
+{"apple_calls":1,"delay":0,"id":"new-priority","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 先处理普通工单\n2. 再处理紧急工单，按照我刚才说的顺序","seconds":1.0617860555648804}
+{"apple_calls":1,"delay":0,"id":"new-path","provider":"Qwen（本地模型）","qwen_calls":1,"rendered":"1. 保留 \/Users\/demo\/notes.txt\n2. 检查 https:\/\/example.org\/api\/v2，不要改地址。","seconds":1.08489990234375}

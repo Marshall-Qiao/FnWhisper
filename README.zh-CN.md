@@ -24,23 +24,23 @@ FnWhisper 是一个仅做语音输入的 macOS 菜单栏 App：在任意输入�
 - 长按 Fn 350 ms 开始录音，短按 Fn 不触发录音。
 - App 运行时独占 Fn 的按下和松开事件，避免 macOS 原有的地球仪、表情、输入源或听写功能抢占；其他修饰键不受影响。
 - 松开 Fn 后停止录音并开始本地转写。
-- 不抢焦点的悬浮状态框会显示“正在听”和“正在本地转成文字”；完成时显示不会写入正文的来源图标和简短说明，例如 `Ⓠ 最终由 Qwen3-4B 本地模型整理`。`Ⓐ` 表示 Apple，`Ⓦ` 表示保留 Whisper/规范化结果。
+- 不抢焦点的悬浮状态框会显示“正在听”和“正在本地转成文字”；完成时显示不会写入正文的来源图标和简短说明，例如 `Ⓠ 最终由 Qwen 本地模型整理`。`Ⓐ` 表示 Apple，`Ⓦ` 表示保留 Whisper/规范化结果。
 - 长按 Fn 时固定捕获当前文本输入控件，转写完成后写回同一个输入框；如果焦点在按钮等非输入控件，会立即提示先点击输入位置。
 - 支持 macOS Terminal：终端的 `AXTextArea` 即使不允许直接修改 Accessibility 值，也会作为有效输入焦点并通过 Cmd+V 写入命令行。
 - 默认让 Whisper 在中文与英文语音之间自动检测，输出层只接受中文、英文和中英混说；检测到其他文字脚本时不会写入。
 - 所有输入框（包括 Terminal、IDE 和代码编辑器）都使用同一条本地处理链：CT-Punc 恢复语义标点，再由 Qwen/Apple 整理；不再按应用类型跳过模型。
 - 普通输入框的中英文或中英混合结果会做结构化整理：删除口吃和纯语气词、恢复热词、转换口语数字、处理明确改口，并把具有可靠枚举或并列信号的任务、步骤或要求渲染成数字列表；即使原文只说“一个是、然后、还有、最后”也能识别。不会翻译、回答问题或改变原意。
-- `Qwen3-4B-Instruct-2507 Q4_K_M` 通过本机 `llama-server` 以 fast/non-thinking 模式运行，并与 Apple Foundation Models 并行。Qwen 按转写长度获得 3–5 秒的动态请求窗口，窗口内返回且通过语义保护时优先；否则使用已并行完成的 Apple 结果；两者都失败时保留经过确定性规范化和标点处理的转写。
-- 默认使用完整架构的量化 `large-v3-q5_0` 模型和 Apple Metal GPU 识别；App 启动后会预热仅监听 `127.0.0.1` 的 `whisper-server`，连续输入无需反复加载模型。Metal 常驻服务失败时会明确提示并尝试 CPU，服务整体不可用时再回退到较慢的单次 `whisper-cli`。
+- `Qwen3.5-4B Q4_K_M` 使用 Metal、fast/non-thinking 与严格 JSON Schema。Qwen 先启动；通常在 1.5 秒内完成时不会调用 Apple，Qwen 提前失败则立即启动 Apple，较慢时延迟启动 Apple 作为回退。总窗口仍按转写长度与录音时长控制在 3–10 秒；两者都失败时保留规范化转写并显示回退提示。输出额度按文本长度在 192–1024 tokens 内动态分配，明确要求段落时禁止把正文放入 lead/tail。
+- 默认使用量化 `large-v3-turbo-q5_0` 模型和 Apple Metal GPU 识别；App 启动后会预热仅监听 `127.0.0.1` 的 `whisper-server`，连续输入无需反复加载模型。Metal 常驻服务失败时会明确提示并尝试 CPU，服务整体不可用时再回退到较慢的单次 `whisper-cli`。
 - 优先重新聚焦开始录音时的输入框并发送 Cmd+V，兼容网页和 Electron 编辑器；粘贴失败时回退到 Accessibility API，并恢复原剪贴板。
 - 菜单栏显示就绪、录音、识别和错误状态；完整处理路径保留在完成阶段的菜单栏悬停提示和本地日志中。
 - 不读取键入内容，不保存录音，不调用云端语音 API。
 
 ## 系统要求
 
-- macOS 13 或更高版本。当前已在 Apple Silicon 上验证；Intel 尚未实机验证。
+- App 的运行目标为 macOS 13+；**源码安装需要 Swift 6.1+**。建议 Apple Silicon、macOS 15.2+ 与兼容的新版 Command Line Tools；Intel 和旧系统未完成从零安装验证，Homebrew 也有独立的系统支持要求。
 - Apple Command Line Tools（`swift`）和 Homebrew。
-- 首次安装约需 1.01 GiB Whisper、72 MiB CT-Punc INT8 和 2.33 GiB Qwen 模型空间；Homebrew 运行依赖另占少量空间。Qwen 下载校验和安装期间需预留约 4.66 GiB 可用空间。
+- 默认模型约需 548 MiB Whisper turbo、72 MiB CT-Punc INT8 和 2.55 GiB Qwen 3.5 空间。新安装建议至少预留 6 GiB 给模型、依赖及构建缓存；升级还会保留旧模型和 App 备份。
 
 ## 最快安装
 
@@ -74,8 +74,8 @@ cd FnWhisper
 1. 按 `Brewfile` 安装 `whisper-cpp` 和 `llama.cpp`；
 2. 下载并校验 Whisper、CT-Punc、Qwen 三个本地模型；
 3. 通过 Swift Package Manager 获取固定版本的 sherpa-onnx 与 ONNX Runtime 静态库；
-4. 构建、签名并安装 `~/Applications/FnWhisper.app`；
-5. 备份旧 App、停止它启动的旧 helper，然后启动新 App。
+4. 构建、签名并检查运行依赖文件；
+5. 停止旧 App 及其 helper，备份后安装并启动 `~/Applications/FnWhisper.app`。
 
 脚本可以重复执行。已经存在且校验正确的模型不会重新下载。
 
@@ -95,11 +95,11 @@ cd FnWhisper
 
 | 模型 | 用途 | 大小 | 默认位置 |
 | --- | --- | ---: | --- |
-| `ggml-large-v3-q5_0.bin` | Whisper 中英文及中英混说识别 | 约 1.01 GiB | `~/Library/Application Support/FnWhisper/Models/ggml-large-v3-q5_0.bin` |
+| `ggml-large-v3-turbo-q5_0.bin` | Whisper 中英文及中英混说识别 | 约 548 MiB | `~/Library/Application Support/FnWhisper/Models/ggml-large-v3-turbo-q5_0.bin` |
 | `model.int8.onnx` | sherpa-onnx CT-Punc 中英文标点 | 约 72 MiB | `~/Library/Application Support/FnWhisper/Models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/model.int8.onnx` |
-| `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` | 本地 fast/non-thinking 文字整理 | 约 2.33 GiB | `~/Library/Application Support/FnWhisper/Models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf` |
+| `Qwen3.5-4B-Q4_K_M.gguf` | 本地 fast/non-thinking 文字整理 | 约 2.55 GiB | `~/Library/Application Support/FnWhisper/Models/Qwen3.5-4B-Q4_K_M.gguf` |
 
-三个下载脚本都校验固定哈希后才写入最终路径。Qwen 下载和安装期间会短暂保留两份文件，因此首次安装应至少预留约 4.66 GiB 可用空间；整个安装还需要为 Whisper、CT-Punc、Homebrew 依赖和构建缓存预留额外空间。
+三个下载脚本都校验固定哈希后才写入最终路径。Qwen 直接下载到最终目录旁的临时文件，校验后原子重命名，不再额外复制一份完整模型；升级仍保留旧模型与 App 备份。
 
 Apple Foundation Models 不是本项目下载的模型。它是 macOS 26 提供的可选系统能力；系统模型不可用时，FnWhisper 仍可使用本地 Qwen，或者保留经过 Whisper、标点和确定性规范化处理的文字。
 
@@ -107,9 +107,9 @@ Apple Foundation Models 不是本项目下载的模型。它是 macOS 26 提供�
 
 ```text
 ~/Applications/FnWhisper.app
-~/Library/Application Support/FnWhisper/Models/ggml-large-v3-q5_0.bin
+~/Library/Application Support/FnWhisper/Models/ggml-large-v3-turbo-q5_0.bin
 ~/Library/Application Support/FnWhisper/Models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/model.int8.onnx
-~/Library/Application Support/FnWhisper/Models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+~/Library/Application Support/FnWhisper/Models/Qwen3.5-4B-Q4_K_M.gguf
 ```
 
 已验证的公开软件版本、哈希和硬件基线见[部署机器配置](docs/DEPLOYMENT_MACHINE.md)。
@@ -120,7 +120,7 @@ Apple Foundation Models 不是本项目下载的模型。它是 macOS 26 提供�
 
 ```bash
 brew bundle --file Brewfile
-./scripts/setup-whisper.sh large-v3-q5_0
+./scripts/setup-whisper.sh large-v3-turbo-q5_0
 ./scripts/setup-punctuation.sh
 ./scripts/setup-qwen.sh
 ./scripts/test.sh
@@ -138,7 +138,12 @@ brew bundle --file Brewfile
 | `scripts/build-app.sh` | Release 构建、组装 `.app`、打包许可证并完成代码签名验证 |
 | `scripts/install.sh` | 构建、备份旧 App、替换安装、结束旧 helper 并启动新 App |
 
-默认安装目录是 `~/Applications`。开发者可以在安装前设置 `FNWHISPER_INSTALL_DIR` 改变目标目录；模型根目录可通过 `FNWHISPER_APP_SUPPORT_DIR` 改变。
+默认安装目录是 `~/Applications`。开发者可以在安装前设置 `FNWHISPER_INSTALL_DIR` 改变目标目录；模型根目录可通过 `FNWHISPER_APP_SUPPORT_DIR` 改变。 `FNWHISPER_APP_SUPPORT_DIR` 必须是绝对路径；构建时会写入 App 配置，因此从 Finder 或下次登录启动仍能找到同一模型目录。更换目录后应重新运行完整安装。
+
+安装入口会先检查 Swift 版本，再下载依赖和模型。`install.sh` 适用于依赖已准备好的机器；它在停止旧 App 前执行 `--check-runtime`，缺少文件或可执行程序时保留旧安装并退出。`--check-runtime` 只检查依赖文件，不代表模型推理或系统权限已经通过验证。
+
+
+构建时会把 Homebrew 的 `llama-server`、llama.cpp 动态库以及与其链接版本一致的 GGML 库和 Metal 后端打包进 App，并分别签名。仅 Qwen 子进程使用这些库，Whisper 仍使用自己的 Homebrew 运行时；这避免了单独升级 GGML 后出现 ABI 不匹配。缺少匹配运行库时构建会明确失败，旧安装保持不变。依赖仍应按 `Brewfile` 安装。
 
 ## 首次授权
 
@@ -200,8 +205,8 @@ git pull --ff-only
 1. `FnKeyMonitor` 监听全局 Fn 事件；持续按住 350 ms 后触发，短按不会录音。
 2. 触发时捕获当前输入框和所属应用，确保转写完成后仍能写回原位置。
 3. `AudioRecorder` 从麦克风录音；松开 Fn 后转换为 Whisper 需要的 16 kHz、单声道、16-bit PCM WAV。
-4. `WhisperRuntime` 将 WAV 发送到本机回环地址上的常驻 `whisper-server`，使用 `large-v3-q5_0` 和 Metal GPU 转写；服务失败时按“常驻 CPU → 单次 CLI”顺序显式回退。
-5. 普通文本目标把 Whisper 原始文字交给进程内常驻的 `sherpa-onnx` CT-Punc INT8 恢复中英文标点，再进行确定性的语气词、热词和口述数字规范化，随后同时请求本机 Qwen fast 模式和 Apple Foundation Models。Qwen 计时只在说话、Whisper 转写和标点处理全部完成后开始：短、中、长文本分别等待 3、4、5 秒；窗口内返回且通过结构与语义校验时优先，否则使用 Apple；两者均失败则保留经过确定性规范化和标点处理的转写。
+4. `WhisperRuntime` 将 WAV 发送到本机回环地址上的常驻 `whisper-server`，使用 `large-v3-turbo-q5_0` 和 Metal GPU 转写；服务失败时按“常驻 CPU → 单次 CLI”顺序显式回退。
+5. 所有目标都先由 CT-Punc 恢复标点，再进行语气词、热词和数字规范化。Qwen 优先整理，Apple 延迟启动或在 Qwen 失败时立即启动。计时从转写与标点完成后开始，统一窗口为 3–10 秒，10 秒录音对应 6.5 秒；短文本不会因显示完成提示而额外等待才能再次录音。普通叙述保持段落，明确枚举按原文顺序生成列表，事项的条件和说明随原项保留。未通过校验时保留规范化转写并提示回退。
 6. 所有目标都使用相同的标点与文字整理流程，最后统一拒绝中英文之外的文字脚本。
 7. `TextInjector` 重新定位原输入框，优先通过 Cmd+V 写入，并在需要时回退 Accessibility API；随后恢复用户原剪贴板并删除临时录音。
 
@@ -209,21 +214,23 @@ git pull --ff-only
 
 ## 时间与准确率取舍
 
+2026-09-21 的五轮模型与配置对比见 [本机模型对比报告](docs/MODEL_COMPARISON_2026-09-21.md)。下面保留较早的历史测量，不能与新报告直接合并成同一组统计。
+
 以下是参考机器 Apple M4 Pro（12 核 CPU、16 核 GPU、48 GiB 内存）的本地实测；时间不包含用户说话时长：
 
 | 选择 | 实测或影响 | 取舍 |
 | --- | --- | --- |
-| 常驻 Metal，`large-v3-q5_0` | 6.95 秒中文样本：多轮首次请求 2.967–3.206 秒；同进程热请求 1.949–1.999 秒 | 当前默认；首次可能包含服务预热，连续输入约 2 秒 |
+| 常驻 Metal，`large-v3-q5_0` | 6.95 秒中文样本：多轮首次请求 2.967–3.206 秒；同进程热请求 1.949–1.999 秒 | 旧默认；首次可能包含服务预热，连续输入约 2 秒 |
 | 单次 CLI Metal，`large-v3-q5_0` | 11 秒英文样本 3.03 秒 | 常驻服务不可用时的兼容路径；每段都重新启动并加载模型 |
 | CPU 8 线程，`large-v3-q5_0` | 同一英文样本 12.60 秒 | 更适合 Metal 不可用的受限环境；会明显占用 CPU |
 | CPU 线程数 | 中英混合样本：4 线程 16.97 秒、8 线程 12.34 秒、10 线程 12.46 秒 | 8 线程在参考机器上最快；更多线程不一定更快，三次输出一致 |
-| `large-v3-q5_0` | 1,081,140,203 bytes，约 1.01 GiB | 当前默认，优先准确率；模型加载和磁盘占用更高 |
+| `large-v3-q5_0` | 1,081,140,203 bytes，约 1.01 GiB | 旧默认，优先准确率；模型加载和磁盘占用更高 |
 | `large-v3-turbo-q5_0` | 574,041,195 bytes，约 548 MiB | 模型更小且通常更快，但可能牺牲复杂口音、噪声和中英混说的准确率；项目尚未对真实用户语音给出量化误差值 |
 | CT-Punc 中英 INT8 | 75,519,198 bytes，约 72 MiB；独立冷启动处理测试句共 0.08 秒 | 只处理最终文本，几乎不增加 Whisper 推理负担；相比基础分段更自然，但模型仍可能误判问号或逗号 |
-| Qwen3-4B-Instruct-2507 Q4_K_M fast 模式 | 2,497,281,120 bytes；预热 1.5–2.7 秒，27 条热请求语料为 0.18–1.31 秒 | 默认文字整理结果；常驻本机内存，不启用 thinking，并按转写长度设置 3–5 秒回退窗口 |
-| Apple Foundation Models 回退 | 当前端到端样本约 0.9–1.7 秒完成 | macOS 26 且系统模型可用时提供快速回退；输出仍需通过相同结构与语义保护 |
+| Qwen3-4B-Instruct-2507 Q4_K_M fast 模式 | 2,497,281,120 bytes；预热 1.5–2.7 秒，27 条热请求语料为 0.18–1.31 秒 | 旧文字整理默认；常驻本机内存，不启用 thinking，并按转写长度设置 3–10 秒回退窗口 |
+| Apple Foundation Models 回退 | 历史端到端样本约 0.9–1.7 秒完成 | macOS 26 且系统模型可用时提供快速回退；输出仍需通过相同结构与语义保护 |
 
-350 ms 的 Fn 长按阈值是误触与响应速度之间的取舍，可以通过 `holdMilliseconds` 调整。常驻 Whisper 去掉了连续输入时重复加载模型的成本，但 App 运行期间会长期占用约 1 GiB 以上模型内存；退出 App 会同步结束它启动的 helper。当前仍在松开 Fn 后对完整语音做一次最终识别，不是边说边输出 partial，因此准确率与写入稳定性优先于首字延迟。
+350 ms 的 Fn 长按阈值是误触与响应速度之间的取舍，可以通过 `holdMilliseconds` 调整。常驻 Whisper 去掉了连续输入时重复加载模型的成本，但 App 运行期间会保留模型与推理缓冲区；退出 App 会同步结束它启动的 helper。当前仍在松开 Fn 后对完整语音做一次最终识别，不是边说边输出 partial，因此准确率与写入稳定性优先于首字延迟。
 
 ## 开发与验证
 
@@ -237,7 +244,7 @@ swift build
 .build/FnWhisper.app/Contents/MacOS/FnWhisper --test-whisper-runtime /absolute/path/to/audio.wav 3
 # 验证真实 CT-Punc 模型
 .build/FnWhisper.app/Contents/MacOS/FnWhisper --test-punctuation "你好这是标点测试"
-# 验证 Qwen/Apple 并行、输出模型和文字整理耗时
+# 验证 Qwen 优先、Apple 延迟回退和文字整理耗时
 .build/FnWhisper.app/Contents/MacOS/FnWhisper --test-text-refinement "嗯 use cloud code 修复这个 bug"
 # 查看当前安装包实际获得的权限
 ~/Applications/FnWhisper.app/Contents/MacOS/FnWhisper --diagnose
@@ -285,8 +292,8 @@ defaults write com.marshall.fnwhisper textModelPath "/absolute/path/model.gguf"
 可选模型：
 
 ```bash
-./scripts/setup-whisper.sh large-v3-turbo-q5_0
 ./scripts/setup-whisper.sh large-v3-q5_0
+./scripts/setup-whisper.sh large-v3-turbo-q5_0
 ./scripts/setup-whisper.sh tiny
 ./scripts/setup-whisper.sh base
 ./scripts/setup-whisper.sh small

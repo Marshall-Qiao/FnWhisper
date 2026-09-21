@@ -1,0 +1,12 @@
+{
+  "Tests/ModelComparison/audio-cases.json": "c8b507d79ac7076195315eb071f02c0090ba4bbbdaf645822cb0de8f3cc674e3",
+  "Tests/ModelComparison/models.json": "12bf3000540ca2e3b89c85d38019a636f5ea205d80882dedf84b5aa773629cf2",
+  "Tests/ModelComparison/requests-baseline.json": "04f1d33d56cee64fd74c4018553bc3001cd0e1d737fe91bfe3f07b915cbe13f6",
+  "Tests/ModelComparison/README.md": "28ba38f2787144712d31064ff71f77b7d0e8fb2488936e107505116b322f3782",
+  "Tests/ModelComparison/cases.json": "d82fa0c8e9a02cc0234f46b0dbcf036a1645f99ebbb551097e4881607e98843c",
+  "Tests/ModelComparison/main.swift": "0f950dbc25d19d87749d9ca3401a52adbe4aeb28484d3cffbc4f4c33e73ce903",
+  "scripts/compare-models.py": "bb6ee4cb6955ee4ef2fdaaa64cdb0b6bcd5feda5f5000d35c7990d0076044e92",
+  "scripts/compare-whisper.py": "86cd8a356db9a3b469ea5aed43bdebe154bec197fca3dca28e5892e1ccc94c88",
+  "Sources/FnWhisper/TextRefinement.swift": "a8e5bdbdfdc39d2e7055f4755dd035c359c12592684ec7eb593ebc78a73c088c",
+  "Sources/FnWhisper/QwenTextRefiner.swift": "6f5b46e397ae6aca379a13aef36a5d11b1fa8599c025a455f499aca7bfd022db"
+}

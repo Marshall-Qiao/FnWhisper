@@ -1,0 +1,19 @@
+[
+  {
+    "process": "9466     1 ${HOME}/Applications/FnWhisper.app/Contents/MacOS/FnWhisper"
+  },
+  {
+    "process": "9480  9466 ${HOME}/Applications/FnWhisper.app/Contents/Resources/bin/llama-server --offline --model ${HOME}/Library/Application Support/FnWhisper/Models/Qwen3.5-4B-Q4_K_M.gguf --host 127.0.0.1 --port 62839 --alias fnwhisper-refiner --ctx-size 4096 --parallel 1 --n-gpu-layers auto --reasoning off --reasoning-budget 0 --chat-template-kwargs {\"enable_thinking\":false} --no-ui",
+    "status": 200,
+    "health": {
+      "status": "ok"
+    }
+  },
+  {
+    "process": "9479  9466 /opt/homebrew/bin/whisper-server --host 127.0.0.1 --port 58317 --request-path /fnwhisper-d3a5c258-a15f-44d4-bf32-a32a1859d60d --threads 8 --model ${HOME}/Library/Application Support/FnWhisper/Models/ggml-large-v3-turbo-q5_0.bin --language auto --no-timestamps --best-of 5 --beam-size 5",
+    "status": 200,
+    "health": {
+      "status": "ok"
+    }
+  }
+]

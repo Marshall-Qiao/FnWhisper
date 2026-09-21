@@ -24,23 +24,23 @@ If you only want to install the app, start with [Quick installation](#quick-inst
 - Hold Fn for 350 ms to start recording; a short press does nothing.
 - While the app is running, it consumes Fn press and release events so macOS Globe, emoji, input-source, or dictation actions cannot take over. Other modifier keys continue to work.
 - Releasing Fn stops recording and starts local transcription.
-- A non-activating floating HUD shows listening and local transcription without stealing focus. On completion it shows a source marker plus a short explanation that is never inserted into the text, such as `Ⓠ Final text refined by the local Qwen3-4B model`. `Ⓐ` represents Apple and `Ⓦ` a preserved Whisper/normalized result.
+- A non-activating floating HUD shows listening and local transcription without stealing focus. On completion it shows a source marker plus a short explanation that is never inserted into the text, such as `Ⓠ Final text refined by the local Qwen model`. `Ⓐ` represents Apple and `Ⓦ` a preserved Whisper/normalized result.
 - The active text control is captured when recording starts, so the result returns to the same field even if focus changes later. Recording is rejected immediately when the current focus is not editable.
 - macOS Terminal is supported: its `AXTextArea` is treated as editable even when Accessibility cannot set its value directly, and Cmd+V writes into the command line.
 - Whisper automatically detects Chinese or English and preserves mixed Chinese-English speech. The output policy accepts only Chinese, English, mixed text, and punctuation.
 - Every input field, including Terminal, IDE, and code-editor fields, uses the same local processing chain: CT-Punc restores semantic punctuation, then Qwen/Apple refines the text. No app-specific model bypass remains.
 - Chinese, English, and mixed prose is organized without changing its meaning: filler and stutters are removed, hotwords and spoken numbers are normalized, and explicit corrections are applied. Numbered lists are used only for genuinely peer, comparable, or independently actionable items—not merely because a passage is long or contains “then”, “also”, semicolons, or several actions. Long prose can keep natural paragraphs while only a local group of parallel actions is numbered.
-- Local `Qwen3-4B-Instruct-2507 Q4_K_M` runs through `llama-server` in fast/non-thinking mode in parallel with Apple Foundation Models. A valid Qwen result wins within a 3–10 second request window calculated from both transcript length and the WAV recording duration; for example, a 10-second recording allows 6.5 seconds. Otherwise the already-running Apple result is used. If both fail validation, the deterministically normalized, punctuated transcript is preserved.
-- The default model is the full-architecture quantized `large-v3-q5_0`, running on Apple Metal GPU. The app warms a `whisper-server` bound only to `127.0.0.1`, so consecutive utterances do not reload the model. A failed Metal service visibly falls back to CPU, then to the slower one-shot `whisper-cli` if the service is unavailable.
+- Local `Qwen3.5-4B Q4_K_M` uses Metal, non-thinking mode, and strict JSON Schema. Qwen starts first; Apple starts only after a short delay (normally 1.5 s), or immediately if Qwen fails. Fast valid Qwen responses avoid a second inference. The shared deadline remains 3–10 s based on transcript length and recording duration. If both fail, the normalized transcript is preserved with an explicit warning. Output budgets scale from 192 to 1024 tokens, and paragraph requests require empty lead/tail fields.
+- The default model is the quantized `large-v3-turbo-q5_0`, running on Apple Metal GPU. The app warms a `whisper-server` bound only to `127.0.0.1`, so consecutive utterances do not reload the model. A failed Metal service visibly falls back to CPU, then to the slower one-shot `whisper-cli` if the service is unavailable.
 - Text insertion first refocuses the captured control and sends Cmd+V for web and Electron compatibility, then falls back to the Accessibility API when needed. The original clipboard is restored afterward.
 - The menu bar icon reports ready, recording, transcribing, and error states. The complete processing path remains available in the menu bar tooltip during completion and in local logs.
 - The app does not read typed content, keep recordings, or call a cloud speech API.
 
 ## Requirements
 
-- macOS 13 or later. Apple Silicon is verified; Intel has not been tested on physical hardware.
+- The app targets macOS 13+, but **building from source requires Swift 6.1+**. Use Apple Silicon, macOS 15.2+, and compatible recent Command Line Tools for the standard source-install path. Intel and older systems have not completed clean-machine verification; Homebrew has separate OS support requirements.
 - Apple Command Line Tools (`swift`) and Homebrew.
-- About 1.01 GiB for Whisper, 72 MiB for CT-Punc INT8, and 2.33 GiB for Qwen, plus Homebrew runtime dependencies. Allow about 4.66 GiB of free space while the Qwen download is being verified and installed.
+- About 548 MiB for Whisper turbo, 72 MiB for CT-Punc INT8, and 2.55 GiB for Qwen 3.5. Allow at least 6 GiB free for a fresh installation, including dependencies and build caches; an upgrade retains old models and app backups.
 
 ## Quick installation
 
@@ -74,8 +74,8 @@ cd FnWhisper
 1. installs `whisper-cpp` and `llama.cpp` from `Brewfile`;
 2. downloads and verifies the local Whisper, CT-Punc, and Qwen models;
 3. lets Swift Package Manager fetch pinned sherpa-onnx and ONNX Runtime static libraries;
-4. builds, signs, and installs `~/Applications/FnWhisper.app`;
-5. backs up the old app, stops its helper processes, and launches the new app.
+4. builds, signs, and checks runtime files;
+5. stops the old app and its helpers, backs it up, then installs and launches `~/Applications/FnWhisper.app`.
 
 The script is safe to rerun. Existing models with valid checksums are not downloaded again.
 
@@ -95,11 +95,11 @@ The script is safe to rerun. Existing models with valid checksums are not downlo
 
 | Model | Purpose | Size | Default location |
 | --- | --- | ---: | --- |
-| `ggml-large-v3-q5_0.bin` | Whisper Chinese, English, and mixed-speech recognition | About 1.01 GiB | `~/Library/Application Support/FnWhisper/Models/ggml-large-v3-q5_0.bin` |
+| `ggml-large-v3-turbo-q5_0.bin` | Whisper Chinese, English, and mixed-speech recognition | About 548 MiB | `~/Library/Application Support/FnWhisper/Models/ggml-large-v3-turbo-q5_0.bin` |
 | `model.int8.onnx` | sherpa-onnx bilingual CT-Punc punctuation | About 72 MiB | `~/Library/Application Support/FnWhisper/Models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/model.int8.onnx` |
-| `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` | Local fast/non-thinking text refinement | About 2.33 GiB | `~/Library/Application Support/FnWhisper/Models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf` |
+| `Qwen3.5-4B-Q4_K_M.gguf` | Local fast/non-thinking text refinement | About 2.55 GiB | `~/Library/Application Support/FnWhisper/Models/Qwen3.5-4B-Q4_K_M.gguf` |
 
-Each model setup script verifies a pinned checksum before writing the final file. The Qwen download and installation briefly keep two copies, so allow at least 4.66 GiB of free space for that stage, plus additional space for Whisper, CT-Punc, Homebrew packages, and build caches.
+Each model setup script verifies a pinned checksum before writing the final file. Qwen downloads into a temporary file beside the final destination and is renamed after verification, avoiding a second full copy. Existing models and app backups are retained during upgrades.
 
 Apple Foundation Models is not downloaded by this project. It is an optional macOS 26 system capability. If it is unavailable, FnWhisper can still use local Qwen or keep the transcript after Whisper, punctuation, and deterministic normalization.
 
@@ -107,9 +107,9 @@ The primary installed files are:
 
 ```text
 ~/Applications/FnWhisper.app
-~/Library/Application Support/FnWhisper/Models/ggml-large-v3-q5_0.bin
+~/Library/Application Support/FnWhisper/Models/ggml-large-v3-turbo-q5_0.bin
 ~/Library/Application Support/FnWhisper/Models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/model.int8.onnx
-~/Library/Application Support/FnWhisper/Models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+~/Library/Application Support/FnWhisper/Models/Qwen3.5-4B-Q4_K_M.gguf
 ```
 
 See the [verified deployment machine configuration](docs/DEPLOYMENT_MACHINE.md) for pinned hashes, verified software versions, and the reference hardware.
@@ -120,7 +120,7 @@ To inspect each dependency, model, and test stage separately, run:
 
 ```bash
 brew bundle --file Brewfile
-./scripts/setup-whisper.sh large-v3-q5_0
+./scripts/setup-whisper.sh large-v3-turbo-q5_0
 ./scripts/setup-punctuation.sh
 ./scripts/setup-qwen.sh
 ./scripts/test.sh
@@ -138,7 +138,11 @@ Script responsibilities:
 | `scripts/build-app.sh` | Produces a Release build, assembles the app, bundles licenses, and verifies code signing |
 | `scripts/install.sh` | Builds, backs up and replaces the old app, stops old helpers, and launches the new app |
 
-The default install directory is `~/Applications`. Developers may set `FNWHISPER_INSTALL_DIR` before installation to select another destination; `FNWHISPER_APP_SUPPORT_DIR` changes the model root.
+The default install directory is `~/Applications`. Developers may set `FNWHISPER_INSTALL_DIR` before installation to select another destination; `FNWHISPER_APP_SUPPORT_DIR` changes the model root. It must be an absolute path and is recorded in the signed app bundle, so Finder and later launches use the same directory. Rebuild/reinstall after changing it.
+
+The Swift toolchain is checked before downloads. `install.sh` assumes dependencies are already prepared and runs `--check-runtime` before stopping the old app. Missing files leave the old installation untouched. This check verifies dependency files, not inference or macOS permissions.
+
+The build snapshots Homebrew’s `llama-server`, llama.cpp libraries, and the matching GGML libraries/Metal backend into the app and signs them individually. Only the Qwen child uses that snapshot; Whisper keeps its own Homebrew runtime. This prevents a separately upgraded GGML library from breaking the selected model. A missing matching runtime fails the build before replacing the old installation. Install dependencies through `Brewfile` as usual.
 
 ## First-launch permissions
 
@@ -200,8 +204,8 @@ An editable caret must be visible when recording starts. You may switch windows 
 1. `FnKeyMonitor` observes global Fn events and activates after a 350 ms hold; short presses do not record.
 2. The current editable control and owning application are captured so the result can return to the original location.
 3. `AudioRecorder` records the microphone and converts the result on release to 16 kHz, mono, 16-bit PCM WAV.
-4. `WhisperRuntime` sends the WAV to a resident `whisper-server` on the local loopback interface, using `large-v3-q5_0` and Metal. Failure handling is explicit: resident CPU, then one-shot CLI compatibility mode.
-5. Prose targets restore punctuation with CT-Punc, apply deterministic filler, hotword, and spoken-number normalization, then request local Qwen fast mode and Apple Foundation Models concurrently. Clear narrative, causal, and time-progressing speech stays a paragraph. Explicit ordinals and declared action/task counts become lists; mixed content can render as `lead + numbered items + tail`. The Qwen timer starts only after Whisper and punctuation complete, and uses both transcript length and measured WAV duration: 3 seconds minimum, 10 seconds maximum, and 6.5 seconds for a 10-second recording. A valid Qwen result wins within that window; otherwise Apple is used. If neither result passes structural and semantic checks, the deterministically normalized, punctuated transcript is kept.
+4. `WhisperRuntime` sends the WAV to a resident `whisper-server` on the local loopback interface, using `large-v3-turbo-q5_0` and Metal. Failure handling is explicit: resident CPU, then one-shot CLI compatibility mode.
+5. Every target uses CT-Punc, deterministic filler/hotword/number normalization, then Qwen with a delayed Apple fallback. The shared 3–10 s timer starts after transcription and punctuation; a 10 s recording allows 6.5 s. Narrative stays a paragraph; explicit peer items become an ordered list with their conditions attached. Failed validation preserves the normalized transcript with a warning. The completion indicator does not prevent starting the next recording.
 6. Every target uses the same punctuation and text-refinement flow, followed by the same rejection of scripts other than Chinese and English.
 7. `TextInjector` locates the original field, prefers Cmd+V, falls back to Accessibility when necessary, restores the original clipboard, and deletes the temporary recording.
 
@@ -209,21 +213,23 @@ All audio and model inference remain local. See [Architecture](docs/ARCHITECTURE
 
 ## Latency and accuracy trade-offs
 
+See the [2026-09-21 five-round model comparison](docs/MODEL_COMPARISON_2026-09-21.md) for the current selection and measurements. The older measurements below are historical and must not be pooled with the new benchmark.
+
 The following measurements were taken locally on the reference Apple M4 Pro machine with a 12-core CPU, 16-core GPU, and 48 GiB memory. Times exclude the time spent speaking.
 
 | Choice | Measurement or impact | Trade-off |
 | --- | --- | --- |
-| Resident Metal with `large-v3-q5_0` | 6.95 s Chinese sample: 2.967–3.206 s across cold first requests and 1.949–1.999 s for warm requests in the same process | Current default; the first request may include warm-up, while consecutive input is about 2 s |
+| Resident Metal with `large-v3-q5_0` | 6.95 s Chinese sample: 2.967–3.206 s across cold first requests and 1.949–1.999 s for warm requests in the same process | Historical default; the first request may include warm-up, while consecutive input is about 2 s |
 | One-shot CLI Metal with `large-v3-q5_0` | 3.03 s for an 11 s English sample | Compatibility path when the resident service is unavailable; reloads the model for every utterance |
 | 8-thread CPU with `large-v3-q5_0` | 12.60 s for the same English sample | Suitable when Metal is unavailable; substantially higher CPU use and latency |
 | CPU thread count | Mixed sample: 16.97 s at 4 threads, 12.34 s at 8, and 12.46 s at 10 | Eight threads were fastest on the reference Mac; more threads were not faster, and all three outputs matched |
-| `large-v3-q5_0` | 1,081,140,203 bytes, about 1.01 GiB | Current accuracy-first default; higher disk use and model-load cost |
+| `large-v3-q5_0` | 1,081,140,203 bytes, about 1.01 GiB | Previous accuracy-first default; higher disk use and model-load cost |
 | `large-v3-turbo-q5_0` | 574,041,195 bytes, about 548 MiB | Smaller and generally faster, but may lose accuracy on accents, noise, and mixed Chinese-English speech; this project has not assigned an error-rate number without a real user-voice benchmark |
 | Bilingual CT-Punc INT8 | 75,519,198 bytes, about 72 MiB; 0.08 s total for a cold standalone test sentence | Runs only on final text and adds little beside Whisper inference; punctuation is more natural than basic segment heuristics, but question marks and commas can still be misclassified |
-| Qwen3-4B-Instruct-2507 Q4_K_M fast mode | 2,497,281,120 bytes; 1.5–2.7 s to warm and 0.18–1.31 s across the 27-case warm corpus | Default text refiner; resident and local, with thinking disabled and a transcript-plus-recording-duration 3–10 s fallback window |
-| Apple Foundation Models fallback | Current end-to-end samples completed in about 0.9–1.7 s | Fast fallback on macOS 26 when the system model is available; the same structural and semantic checks still apply |
+| Qwen3-4B-Instruct-2507 Q4_K_M fast mode | 2,497,281,120 bytes; 1.5–2.7 s to warm and 0.18–1.31 s across the 27-case warm corpus | Previous text refiner; resident and local, with thinking disabled and a transcript-plus-recording-duration 3–10 s fallback window |
+| Apple Foundation Models fallback | Historical end-to-end samples completed in about 0.9–1.7 s | Fast fallback on macOS 26 when the system model is available; the same structural and semantic checks still apply |
 
-These measurements support the default for the reference machine; they are not an absolute ranking for every Mac, microphone, accent, or workload. Another computer should rerun the same warm/cold samples and compare latency plus transcript correctness before changing the model. The 350 ms Fn threshold trades accidental activations against responsiveness and can be changed with `holdMilliseconds`. The resident Whisper process removes repeated model loading, but keeps more than 1 GiB of model memory while the app is running; quitting the app synchronously stops the helper it launched. FnWhisper still performs one final full-utterance decode after Fn is released instead of inserting partial results while you speak, prioritizing accuracy and stable insertion over first-token latency.
+These historical measurements supported the previous default; they are not an absolute ranking for every Mac, microphone, accent, or workload. Another computer should rerun the same warm/cold samples and compare latency plus transcript correctness before changing the model. The 350 ms Fn threshold trades accidental activations against responsiveness and can be changed with `holdMilliseconds`. The resident Whisper process removes repeated model loading, but keeps resident model and inference buffers while the app is running; quitting the app synchronously stops the helper it launched. FnWhisper still performs one final full-utterance decode after Fn is released instead of inserting partial results while you speak, prioritizing accuracy and stable insertion over first-token latency.
 
 ## Development and verification
 
@@ -267,7 +273,7 @@ defaults write com.marshall.fnwhisper language zh
 # Fn hold threshold in milliseconds, clamped to 150–2000
 defaults write com.marshall.fnwhisper holdMilliseconds 450
 
-# Whisper CPU threads; eight were fastest on the reference M4 Pro
+# Whisper CPU threads; eight were fastest in the historical CPU fallback test
 defaults write com.marshall.fnwhisper threadCount 8
 
 # Metal is enabled by default; false forces CPU-only transcription
@@ -288,8 +294,8 @@ During development, `FNWHISPER_LANGUAGE`, `FNWHISPER_HOLD_MS`, `FNWHISPER_THREAD
 Available model downloads:
 
 ```bash
-./scripts/setup-whisper.sh large-v3-turbo-q5_0
 ./scripts/setup-whisper.sh large-v3-q5_0
+./scripts/setup-whisper.sh large-v3-turbo-q5_0
 ./scripts/setup-whisper.sh tiny
 ./scripts/setup-whisper.sh base
 ./scripts/setup-whisper.sh small

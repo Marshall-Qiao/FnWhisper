@@ -14,7 +14,7 @@ struct QwenServerEndpoint: Equatable {
 }
 
 enum QwenServerProtocol {
-    static let modelAlias = "qwen3-4b-instruct-2507-q4-k-m"
+    static let modelAlias = "fnwhisper-refiner"
 
     static func launchArguments(
         endpoint: QwenServerEndpoint,
@@ -38,27 +38,29 @@ enum QwenServerProtocol {
 
     static func requestBody(
         input: TextRefinementInput,
-        maximumTokens: Int = 192
+        maximumTokens: Int? = nil
     ) throws -> Data {
         let expectedItemCount = max(
             TextLayoutHeuristics.explicitOrdinalCount(in: input.source),
             TextLayoutHeuristics.declaredItemCount(in: input.source) ?? 0
         )
+        let sectionSchema: [String: Any] = input.permitsList
+            ? ["type": "string"] : ["type": "string", "const": ""]
         let schema: [String: Any] = [
             "type": "object",
             "additionalProperties": false,
             "required": ["lead", "items", "tail"],
             "properties": [
-                "lead": ["type": "string"],
+                "lead": sectionSchema,
                 "items": [
                     "type": "array",
                     "minItems": input.requiredFormat == .numberedList
                         ? max(2, expectedItemCount) : 1,
-                    "maxItems": input.requiredFormat == .paragraph
-                        ? 1 : (expectedItemCount >= 2 ? expectedItemCount : 8),
-                    "items": ["type": "string"],
+                    "maxItems": input.permitsList
+                        ? (expectedItemCount >= 2 ? expectedItemCount : 8) : 1,
+                    "items": ["type": "string", "minLength": 1],
                 ],
-                "tail": ["type": "string"],
+                "tail": sectionSchema,
             ],
         ]
         let body: [String: Any] = [
@@ -74,7 +76,8 @@ enum QwenServerProtocol {
                 ],
             ],
             "temperature": 0,
-            "max_tokens": max(1, maximumTokens),
+            "max_tokens": max(1, maximumTokens
+                ?? AppConfiguration.textRefinementTokenBudget(for: input.source)),
             "stream": false,
             "chat_template_kwargs": ["enable_thinking": false],
             "response_format": [
@@ -91,7 +94,7 @@ enum QwenServerProtocol {
 
     static func requestBody(
         text: String,
-        maximumTokens: Int = 192
+        maximumTokens: Int? = nil
     ) throws -> Data {
         try requestBody(
             input: TextRefinementInput.prepare(text),
@@ -118,6 +121,9 @@ enum QwenServerProtocol {
         else {
             throw TextRefinementError.invalidResponse("Qwen 响应无法解析")
         }
+        if choices.first?["finish_reason"] as? String == "length" {
+            throw TextRefinementError.invalidResponse("Qwen 输出达到长度上限，未使用截断结果")
+        }
         return content
     }
 }
@@ -127,10 +133,6 @@ final class QwenTextRefiner: TextRefining, @unchecked Sendable {
     private let modelURL: URL
     private let stateQueue = DispatchQueue(
         label: "com.marshall.fnwhisper.qwen-state",
-        qos: .userInitiated
-    )
-    private let inferenceQueue = DispatchQueue(
-        label: "com.marshall.fnwhisper.qwen-inference",
         qos: .userInitiated
     )
     private let processHolder = QwenChildProcessHolder()
@@ -276,6 +278,17 @@ final class QwenTextRefiner: TextRefining, @unchecked Sendable {
             endpoint: endpoint,
             modelURL: modelURL
         )
+        if let resources = Bundle.main.resourceURL,
+           executableURL.path.hasPrefix(resources.appendingPathComponent("bin/").path),
+           let frameworks = Bundle.main.privateFrameworksURL {
+            let libraries = frameworks.appendingPathComponent("LocalInference", isDirectory: true)
+            if FileManager.default.fileExists(atPath: libraries.path) {
+                var environment = ProcessInfo.processInfo.environment
+                environment["DYLD_LIBRARY_PATH"] = libraries.path
+                environment["GGML_BACKEND_PATH"] = libraries.appendingPathComponent("backends").path
+                process.environment = environment
+            }
+        }
         process.standardOutput = FileHandle.nullDevice
         process.standardError = errorPipe
 
@@ -354,33 +367,18 @@ final class QwenTextRefiner: TextRefining, @unchecked Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try QwenServerProtocol.requestBody(input: input)
 
-        return try await withCheckedThrowingContinuation { continuation in
-            inferenceQueue.async { [self] in
-                do {
-                    let response = try synchronousRequest(
-                        request,
-                        timeout: timeout
-                    )
-                    let content = try QwenServerProtocol.parseResponse(
-                        data: response.data,
-                        statusCode: response.statusCode
-                    )
-                    guard let data = content.data(using: .utf8),
-                          let payload = try? JSONDecoder().decode(
-                            TextRefinementPayload.self,
-                            from: data
-                          )
-                    else {
-                        throw TextRefinementError.invalidResponse(
-                            "Qwen 返回的结构无法解析"
-                        )
-                    }
-                    continuation.resume(returning: payload)
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
+        // URLSession's async API propagates Task cancellation to the HTTP task.
+        // A deadline must not leave obsolete inference queued behind the next input.
+        let (data, response) = try await session.data(for: request)
+        try Task.checkCancellation()
+        guard let response = response as? HTTPURLResponse else {
+            throw TextRefinementError.invalidResponse("Qwen HTTP 响应无法解析")
         }
+        let content = try QwenServerProtocol.parseResponse(data: data, statusCode: response.statusCode)
+        guard let payload = try? JSONDecoder().decode(TextRefinementPayload.self, from: Data(content.utf8)) else {
+            throw TextRefinementError.invalidResponse("Qwen 返回的结构无法解析")
+        }
+        return payload
     }
 
     private func synchronousRequest(
@@ -412,6 +410,13 @@ final class QwenTextRefiner: TextRefining, @unchecked Sendable {
     }
 
     private func shouldRestart(after error: Error) -> Bool {
+        if Task.isCancelled || error is CancellationError {
+            return false
+        }
+        if let error = error as? URLError,
+           error.code == .cancelled || error.code == .timedOut {
+            return false
+        }
         guard let error = error as? TextRefinementError else {
             return true
         }

@@ -3,10 +3,10 @@
 set -euo pipefail
 
 APP_SUPPORT_DIR="${FNWHISPER_APP_SUPPORT_DIR:-${HOME}/Library/Application Support/FnWhisper}"
-MODEL_FILENAME="Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+MODEL_FILENAME="Qwen3.5-4B-Q4_K_M.gguf"
 MODEL_PATH="$APP_SUPPORT_DIR/Models/$MODEL_FILENAME"
-MODEL_URL="https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/a06e946bb6b655725eafa393f4a9745d460374c9/Qwen3-4B-Instruct-2507-Q4_K_M.gguf?download=true"
-MODEL_SHA256="3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597"
+MODEL_URL="https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf?download=true"
+MODEL_SHA256="00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4"
 
 LLAMA_SERVER_PATH="${FNWHISPER_LLAMA_SERVER:-}"
 if [[ -z "$LLAMA_SERVER_PATH" ]]; then
@@ -45,17 +45,17 @@ done
 if [[ -f "$MODEL_PATH" ]]; then
     EXISTING_SHA256="$(shasum -a 256 "$MODEL_PATH" | awk '{print $1}')"
     if [[ "$EXISTING_SHA256" == "$MODEL_SHA256" ]]; then
-        print "Qwen3-4B-Instruct-2507 Q4_K_M 模型已存在并通过校验：$MODEL_PATH"
+        print "Qwen3.5-4B Q4_K_M 模型已存在并通过校验：$MODEL_PATH"
         exit 0
     fi
     print -u2 "已有 Qwen 模型校验不一致，将重新下载。"
 fi
 
-TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/FnWhisper-qwen.XXXXXX")"
-trap 'rm -rf "$TEMP_DIR"' EXIT
-DOWNLOADED_MODEL="$TEMP_DIR/$MODEL_FILENAME"
+mkdir -p "$(dirname "$MODEL_PATH")"
+DOWNLOADED_MODEL="$MODEL_PATH.download"
+trap 'rm -f "$DOWNLOADED_MODEL"' EXIT
 
-print "正在下载 Qwen3-4B-Instruct-2507 Q4_K_M（约 2.5 GB）…"
+print "正在下载 Qwen3.5-4B Q4_K_M（约 2.74 GB）…"
 curl --fail --location --retry 3 --progress-bar \
     "$MODEL_URL" \
     --output "$DOWNLOADED_MODEL"
@@ -68,9 +68,7 @@ if [[ "$DOWNLOADED_SHA256" != "$MODEL_SHA256" ]]; then
     exit 1
 fi
 
-mkdir -p "$(dirname "$MODEL_PATH")"
-TEMP_MODEL_PATH="$MODEL_PATH.download"
-cp "$DOWNLOADED_MODEL" "$TEMP_MODEL_PATH"
-mv "$TEMP_MODEL_PATH" "$MODEL_PATH"
+mv "$DOWNLOADED_MODEL" "$MODEL_PATH"
+trap - EXIT
 
-print "Qwen3-4B-Instruct-2507 Q4_K_M 模型已准备完成：$MODEL_PATH"
+print "Qwen3.5-4B Q4_K_M 模型已准备完成：$MODEL_PATH"

@@ -1,0 +1,30 @@
+[
+  {
+    "arguments": [
+      "--test-punctuation",
+      "你好这是标点测试请检查金额和额度"
+    ],
+    "returncode": 0,
+    "stdout": "你好，这是标点测试，请检查金额和额度。\n",
+    "stderr": ""
+  },
+  {
+    "arguments": [
+      "--test-whisper-runtime",
+      "${PROJECT_DIR}/.build/model-comparison-20260921/audio/zh-list.wav",
+      "2"
+    ],
+    "returncode": 0,
+    "stdout": "第一,备份数据库,第二,检查接口,第三,更新文档。\n",
+    "stderr": "第 1 次：常驻 Metal；耗时：1.528 秒\n第 2 次：常驻 Metal；耗时：1.262 秒\n"
+  },
+  {
+    "arguments": [
+      "--test-text-refinement",
+      "第一检查日志，第二更新配置，第三跑测试，第四更新文档。"
+    ],
+    "returncode": 0,
+    "stdout": "1. 检查日志\n2. 更新配置\n3. 跑测试\n4. 更新文档\n",
+    "stderr": "Qwen 预热完成：10.102 秒\n文字整理：Qwen（本地模型）；耗时：0.835 秒\n"
+  }
+]

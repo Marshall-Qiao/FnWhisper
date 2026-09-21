@@ -38,7 +38,7 @@ enum DictationTextProcessing: Equatable {
         case let .refined(_, provider):
             switch provider {
             case .qwen:
-                return "最终由 Qwen3-4B 本地模型整理"
+                return "最终由 Qwen 本地模型整理"
             case .apple:
                 return "最终由 Apple 本地模型整理"
             }

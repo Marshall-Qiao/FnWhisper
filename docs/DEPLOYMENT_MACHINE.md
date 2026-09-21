@@ -1,6 +1,6 @@
 # 部署机器配置
 
-本文记录 FnWhisper 在 2026-08-05 完成安装与输入验证、2026-08-12 完成常驻 Whisper 与 CT-Punc INT8 验证、2026-08-21 完成 Qwen 2507 文字整理验证，并在 2026-08-24 完成新版本安装与进程生命周期验证时的公开基线。它是已验证快照，不是最低硬件要求，也不保证 Homebrew 未来仍提供相同补丁版本。
+本文记录 2026-09-21 五轮比较后安装到本机的配置。它是已验证快照，不是最低硬件要求，也不保证 Homebrew 未来仍提供相同补丁版本。详细语料、结果和边界见[模型对比报告](MODEL_COMPARISON_2026-09-21.md)。2026-08 的验证记录保留在文末，不能视为本次新模型的实测。
 
 ## 已验证硬件
 
@@ -23,7 +23,7 @@
 | Homebrew | 6.0.15 |
 | whisper.cpp | 1.9.2 |
 | llama.cpp / llama-server | build 9430 |
-| ggml | 0.18.1（当前链接版本） |
+| ggml | Whisper 使用 Homebrew 0.18.1；Qwen 使用 App 内匹配 llama.cpp 的 0.13.1 快照 |
 | sdl3 | 3.4.14 |
 | sdl2-compat | 2.32.70 |
 | libomp | 22.1.8（当前链接版本） |
@@ -36,30 +36,32 @@
 
 | 项目 | 值 |
 | --- | --- |
-| 模型 | `ggml-large-v3-q5_0.bin`，完整 Large-v3 量化版 |
-| 文件大小 | 1,081,140,203 bytes |
-| SHA-1 | `e6e2ed78495d403bef4b7cff42ef4aaadcfea8de` |
-| 默认位置 | `~/Library/Application Support/FnWhisper/Models/ggml-large-v3-q5_0.bin` |
+| 模型 | `ggml-large-v3-turbo-q5_0.bin`，Large-v3 Turbo 量化版 |
+| 文件大小 | 574,041,195 bytes |
+| SHA-1 | `e050f7970618a659205450ad97eb95a18d69c9ee` |
+| 默认位置 | `~/Library/Application Support/FnWhisper/Models/ggml-large-v3-turbo-q5_0.bin` |
 | 标点模型 | `sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/model.int8.onnx` |
 | 标点模型大小 | 75,519,198 bytes |
 | 标点模型 SHA-256 | `65a3fb9f5ad7bfb96bf69e0dc4481df97f6ee60513c1d94ce981ba6effd524b1` |
 | 标点模型默认位置 | `~/Library/Application Support/FnWhisper/Models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/model.int8.onnx` |
-| 文字整理模型 | `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` |
-| Qwen 模型大小 | 2,497,281,120 bytes |
-| Qwen 模型 SHA-256 | `3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597` |
-| Qwen 默认位置 | `~/Library/Application Support/FnWhisper/Models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf` |
+| 文字整理模型 | `Qwen3.5-4B-Q4_K_M.gguf` |
+| Qwen 模型大小 | 2,740,937,888 bytes |
+| Qwen 模型 SHA-256 | `00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4` |
+| Qwen 默认位置 | `~/Library/Application Support/FnWhisper/Models/Qwen3.5-4B-Q4_K_M.gguf` |
 
 模型不会提交到 Git。`scripts/setup-whisper.sh` 从 whisper.cpp 官方模型位置下载并校验 SHA-1；`scripts/setup-punctuation.sh` 从 sherpa-onnx 官方 punctuation-model release 下载并校验 SHA-256；`scripts/setup-qwen.sh` 从固定 revision 的 Unsloth GGUF 仓库下载基于官方 Qwen 模型的 Q4_K_M 文件，并校验 SHA-256。
 
-Qwen 最终占用约 2.33 GiB；下载校验后写入最终路径时会短暂同时保留两份文件，因此安装时需预留约 4.66 GiB 可用空间。
+Qwen 最终占用约 2.55 GiB；下载文件在目标目录完成校验后直接重命名，不再多复制一份。三种模型合计约 3.16 GiB；新安装建议至少预留 6 GiB，另需考虑已有缓存、旧模型和 App 备份。
 
 ## 部署布局
 
 ```text
 ~/Applications/FnWhisper.app
-~/Library/Application Support/FnWhisper/Models/ggml-large-v3-q5_0.bin
+~/Applications/FnWhisper.app/Contents/Resources/bin/llama-server
+~/Applications/FnWhisper.app/Contents/Frameworks/LocalInference/
+~/Library/Application Support/FnWhisper/Models/ggml-large-v3-turbo-q5_0.bin
 ~/Library/Application Support/FnWhisper/Models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/model.int8.onnx
-~/Library/Application Support/FnWhisper/Models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+~/Library/Application Support/FnWhisper/Models/Qwen3.5-4B-Q4_K_M.gguf
 /opt/homebrew/bin/whisper-cli        # Apple Silicon Homebrew
 /opt/homebrew/bin/whisper-server     # Apple Silicon Homebrew
 /opt/homebrew/bin/llama-server       # Apple Silicon Homebrew
@@ -70,11 +72,11 @@ Qwen 最终占用约 2.33 GiB；下载校验后写入最终路径时会短暂同
 
 参考机器没有 Apple 代码签名身份。构建脚本因此使用 ad-hoc 签名，并加入只适合本地开发的稳定 designated requirement，避免每次二进制哈希变化都让 TCC 权限失效。它不包含 Apple Developer ID、私钥或公证凭据，也不应作为正式分发的信任方案；正式构建应通过 `FNWHISPER_SIGN_IDENTITY` 指定 Apple Development 或 Developer ID Application 身份。
 
-公开仓库只构建 App；macOS 的输入监听、辅助功能和麦克风权限必须由当前登录用户在系统设置中手工授予，不能安全地随代码部署。首次从旧 ad-hoc 构建迁移时需执行一次 `tccutil reset All com.marshall.fnwhisper`，重新安装后再手动授权。
+公开仓库只构建 App；macOS 的输入监听、辅助功能和麦克风权限必须由当前登录用户在系统设置中手工授予，不能安全地随代码部署。仅在旧 ad-hoc 构建升级后反复显示未授权时，才执行一次 `tccutil reset All com.marshall.fnwhisper`，重新安装后再手动授权。
 
 ## 新机器部署
 
-1. 安装 Apple Command Line Tools：`xcode-select --install`。
+1. 使用兼容的 macOS 和 Apple Command Line Tools（Swift 6.1+）：`xcode-select --install`。当前推荐 Apple Silicon、macOS 15.2+，与 App 的 macOS 13 部署目标不同。
 2. 安装 [Homebrew](https://brew.sh)。
 3. 克隆仓库并运行：
 
@@ -86,7 +88,7 @@ Qwen 最终占用约 2.33 GiB；下载校验后写入最终路径时会短暂同
 
 ```bash
 brew bundle --file Brewfile
-./scripts/setup-whisper.sh large-v3-q5_0
+./scripts/setup-whisper.sh large-v3-turbo-q5_0
 ./scripts/setup-punctuation.sh
 ./scripts/setup-qwen.sh
 ./scripts/test.sh
@@ -95,7 +97,18 @@ brew bundle --file Brewfile
 
 安装完成后，在“系统设置 → 隐私与安全性”中授予输入监听、辅助功能和麦克风权限，再通过菜单栏的“检查权限与运行环境”确认状态。
 
-## 已验证边界
+## 2026-09-21 安装与验证
+
+- 安装并重启 `~/Applications/FnWhisper.app`；最后一次部署的旧 App 备份为 `FnWhisper.app.backup-20260921-154801`。
+- 安装文件与 Release App 可执行文件 SHA-256 相同：`5722592ebce86e447b02179f7322580dac9b7e2516568cfde2e807565e20b230`；`codesign --verify --deep --strict` 通过。
+- 旧 App 及其两个 helper 已退出；新 App 只持有一个 Turbo Whisper 和一个 Qwen3.5-4B helper，均仅绑定回环地址，健康检查返回 200。CLI 验证完成后没有遗留测试 helper。
+- 实际安装文件运行 CT-Punc 成功；中文合成 WAV 的两次常驻 Metal 请求为 1.528 / 1.262 秒；四项中文列表由 Qwen 输出正确，预热 10.102 秒、整理 0.835 秒。预热与热请求分别记录，不能混用。
+- 核心测试、Shell 语法、Python 语法、Release 构建与签名检查通过。完整 50 条模型回归有 47 条严格匹配，其余 3 条被保护校验拒绝；细节见对比报告。
+- 本次 `--diagnose` 显示辅助功能、输入监听和事件输入已授权，麦克风显示首次录音时请求；本次未操作真实 Fn 录音和目标应用写入，待用户验证。
+- 首装流程已修复工具链预检、自定义模型路径、模型下载空间与运行库匹配问题；尚未在一台无 Homebrew/模型的全新 Mac 上从零完成安装。文件预检不等于推理、签名分发或权限验证。
+- 部署验证范围是本机，不包含发布安装包或其他机器安装。
+
+## 2026-08 历史验证边界
 
 - 核心测试：Fn 状态机、长按冲突拦截、音频格式转换、目标分类、Whisper server 协议、CLI 回退参数、标点和口语数字规范化、文字整理校验、Qwen fast 模式参数与动态超时。
 - 构建：Swift Release 构建、sherpa-onnx / ONNX Runtime 静态链接、`.app` 打包与签名验证通过；可执行文件约 33.1 MiB。

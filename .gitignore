@@ -9,3 +9,4 @@ FnWhisper.app/
 *.gguf
 *.onnx
 *.download
+__pycache__/

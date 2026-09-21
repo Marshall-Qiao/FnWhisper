@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Foundation
+import os
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -92,7 +93,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if qwenTextRefiner != nil || appleTextRefiner != nil {
             textRefiner = ParallelTextRefiner(
                 qwen: qwenTextRefiner,
-                apple: appleTextRefiner
+                apple: appleTextRefiner,
+                failureReporter: { provider, error in
+                    Logger(subsystem: "com.marshall.fnwhisper", category: "TextRefinement")
+                        .error("\(provider, privacy: .public) refinement failed: \(error.localizedDescription, privacy: .public)")
+                }
             )
         } else {
             textRefiner = nil

@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-MODEL_NAME="${1:-large-v3-q5_0}"
+MODEL_NAME="${1:-large-v3-turbo-q5_0}"
 APP_SUPPORT_DIR="${FNWHISPER_APP_SUPPORT_DIR:-${HOME}/Library/Application Support/FnWhisper}"
 MODEL_DIR="$APP_SUPPORT_DIR/Models"
 

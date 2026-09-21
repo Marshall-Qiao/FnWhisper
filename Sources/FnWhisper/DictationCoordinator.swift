@@ -45,6 +45,7 @@ final class DictationCoordinator {
     )
     private var fnIsStillHeld = false
     private var insertionTarget: TextInsertionTarget?
+    private var completionTask: Task<Void, Never>?
     private(set) var phase: DictationPhase = .idle {
         didSet {
             onPhaseChange?(phase)
@@ -66,9 +67,11 @@ final class DictationCoordinator {
     }
 
     func beginDictation() {
-        guard phase == .idle || isFailed else {
+        guard phase == .idle || isFailed || isCompleted else {
             return
         }
+        completionTask?.cancel()
+        completionTask = nil
 
         fnIsStillHeld = true
         insertionTarget = textInjector.captureFocusedTarget()
@@ -133,6 +136,11 @@ final class DictationCoordinator {
         if case .failed = phase {
             return true
         }
+        return false
+    }
+
+    private var isCompleted: Bool {
+        if case .completed = phase { return true }
         return false
     }
 
@@ -234,11 +242,13 @@ final class DictationCoordinator {
             "Dictation processing route=\(route.displayText, privacy: .public)"
         )
         phase = .completed(preview: preview, route: route)
-        try? await Task.sleep(nanoseconds: 1_500_000_000)
-        guard case .completed = phase else {
-            return
+        completionTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: 1_500_000_000) }
+            catch { return }
+            guard let self, !Task.isCancelled, self.isCompleted else { return }
+            self.phase = .idle
+            self.completionTask = nil
         }
-        phase = .idle
     }
 
     private func fail(_ error: Error) {
